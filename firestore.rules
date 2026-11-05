@@ -38,11 +38,32 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
-    // Produtos secretos: só leitura, só para autenticados E autorizados.
-    // Escrita bloqueada para qualquer cliente (cadastre pelo Console do Firebase).
+    // Administrador: autorizado E com admin == true no próprio documento de autorização.
+    // (admin só pode ser definido pelo Console do Firebase, pois usuarios_autorizados é imutável pelo app.)
+    function admin() {
+      return autorizado()
+        && get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.get('admin', false) == true;
+    }
+
+    // Validação dos dados gravados em produtos_secretos.
+    function produtoValido() {
+      let d = request.resource.data;
+      return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 120
+        && d.categoria is string && d.categoria.size() > 0 && d.categoria.size() <= 60
+        && d.preco is number && d.preco >= 0
+        && d.get('descricao', '') is string && d.get('descricao', '').size() <= 1000
+        && d.get('imagemUrl', '') is string && d.get('imagemUrl', '').size() <= 700000
+        && d.get('disponivel', true) is bool
+        && d.get('visivel', true) is bool;
+    }
+
+    // Produtos secretos:
+    //  - ler: qualquer usuário autorizado e ativo
+    //  - criar/editar/excluir: somente administradores (e com dados válidos)
     match /produtos_secretos/{id} {
       allow get, list: if autorizado();
-      allow create, update, delete: if false;
+      allow create, update: if admin() && produtoValido();
+      allow delete: if admin();
     }
 
     // Qualquer outro caminho não listado acima continua NEGADO por padrão.

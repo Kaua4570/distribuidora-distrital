@@ -17,6 +17,7 @@ before(async () => {
     const db = ctx.firestore();
     await setDoc(doc(db, "usuarios_autorizados/AUT"), { ativo: true });
     await setDoc(doc(db, "usuarios_autorizados/INATIVO"), { ativo: false });
+    await setDoc(doc(db, "usuarios_autorizados/ADM"), { ativo: true, admin: true });
     await setDoc(doc(db, "produtos_secretos/p1"), { nome: "X", preco: 1 });
     await setDoc(doc(db, "produtos/pub"), { nome: "Skol" });
   });
@@ -41,13 +42,29 @@ test("autorizado ativo lê", async () => {
   await assertSucceeds(getDoc(doc(user("AUT"), "produtos_secretos/p1")));
   await assertSucceeds(getDocs(collection(user("AUT"), "produtos_secretos")));
 });
-test("ninguém escreve em produtos_secretos (nem autorizado)", async () => {
-  await assertFails(setDoc(doc(user("AUT"), "produtos_secretos/novo"), { nome: "y" }));
+const ok = { nome: "Novo", categoria: "Vinhos", preco: 10.5, disponivel: true };
+test("autorizado SEM admin NÃO escreve em produtos_secretos", async () => {
+  await assertFails(setDoc(doc(user("AUT"), "produtos_secretos/novo"), ok));
   await assertFails(deleteDoc(doc(user("AUT"), "produtos_secretos/p1")));
+});
+test("anônimo e não autorizado NÃO escrevem", async () => {
+  await assertFails(setDoc(doc(anon(), "produtos_secretos/novo"), ok));
+  await assertFails(setDoc(doc(user("HACKER"), "produtos_secretos/novo"), ok));
+});
+test("admin escreve com dados válidos e exclui", async () => {
+  await assertSucceeds(setDoc(doc(user("ADM"), "produtos_secretos/novo"), ok));
+  await assertSucceeds(deleteDoc(doc(user("ADM"), "produtos_secretos/novo")));
+});
+test("admin NÃO grava dados inválidos", async () => {
+  await assertFails(setDoc(doc(user("ADM"), "produtos_secretos/x"), { ...ok, preco: -1 }));
+  await assertFails(setDoc(doc(user("ADM"), "produtos_secretos/x"), { ...ok, preco: "10" }));
+  await assertFails(setDoc(doc(user("ADM"), "produtos_secretos/x"), { ...ok, nome: "" }));
+  await assertFails(setDoc(doc(user("ADM"), "produtos_secretos/x"), { categoria: "A", preco: 1 }));
 });
 test("usuário comum NÃO se autoriza sozinho", async () => {
   await assertFails(setDoc(doc(user("HACKER"), "usuarios_autorizados/HACKER"), { ativo: true }));
-  await assertFails(setDoc(doc(user("AUT"), "usuarios_autorizados/AUT"), { ativo: true }));
+  await assertFails(setDoc(doc(user("AUT"), "usuarios_autorizados/AUT"), { ativo: true, admin: true }));
+  await assertFails(setDoc(doc(user("ADM"), "usuarios_autorizados/OUTRO"), { ativo: true }));
 });
 test("só lê o PRÓPRIO doc de autorização; não lista", async () => {
   await assertSucceeds(getDoc(doc(user("AUT"), "usuarios_autorizados/AUT")));

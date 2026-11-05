@@ -199,7 +199,7 @@ function construirModal(){
       if (!fb) carregandoModulos = null;
       setOcupado(false);
       senha.value = "";
-      mostrarErro(mensagemDeErro(err) + "  [DEBUG: " + ((err && err.code) || err) + (fb && fb.diagAutorizacao ? " | " + fb.diagAutorizacao : "") + "]");
+      mostrarErro(mensagemDeErro(err));
       senha.focus();
     }
   });

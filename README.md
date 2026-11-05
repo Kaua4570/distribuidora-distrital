@@ -150,7 +150,13 @@ Em **Settings → Authorized domains**, confira se o domínio onde o site está 
 3. Para **revogar**: mude `ativo` para `false` ou apague o documento — a tela do usuário é bloqueada na hora.
 
 ### 4. Adicionar produtos secretos
-Firestore → coleção `produtos_secretos` → **Add document** (ID automático). Campos:
+
+**Pelo app (recomendado):** torne o seu usuário administrador: no documento dele em `usuarios_autorizados`
+adicione o campo `admin` (boolean) = `true`. Ao entrar na área secreta aparece o botão **+ Novo**; ao abrir um
+produto aparece **Editar produto** (com **Excluir**). A foto é escolhida da galeria/câmera e comprimida automaticamente.
+Usuários autorizados sem `admin` só visualizam.
+
+**Pelo Console (alternativa):** Firestore → coleção `produtos_secretos` → **Add document** (ID automático). Campos:
 
 | Campo | Tipo | Exemplo |
 |---|---|---|
@@ -163,7 +169,7 @@ Firestore → coleção `produtos_secretos` → **Add document** (ID automático
 | `ordem` | number | 1 (opcional, ordena a lista) |
 | `visivel` | boolean | false esconde o produto (opcional) |
 
-A escrita por aplicativos é bloqueada nas regras: produtos só são criados/editados pelo Console.
+Escrever em `produtos_secretos` só é permitido (nas regras) para `admin: true`, com validação de nome, categoria e preço.
 
 ### 5. Testar as regras
 `firestore.rules.test.mjs` (instruções no topo do arquivo). Também dá para usar o
