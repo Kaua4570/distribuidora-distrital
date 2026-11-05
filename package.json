@@ -1,0 +1,1 @@
+{"name":"distribuidora-campos","private":true,"engines":{"node":"20.x"},"dependencies":{"firebase-admin":"^12.0.0"}}

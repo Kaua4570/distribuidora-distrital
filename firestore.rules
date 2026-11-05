@@ -1,0 +1,29 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function logado(){ return request.auth != null; }
+    function papel(){ return request.auth.token.role; }
+    function pinOk(){ return request.auth.token.pinAt > request.time.toMillis() - 28800000; }
+    function adm(){ return logado() && papel() == 'admin' && pinOk(); }
+    function ent(){ return logado() && papel() == 'entregador' && pinOk(); }
+
+    match /produtos/{id} {
+      allow read: if logado() && papel() in ['cliente','admin'];
+      allow write: if adm();
+    }
+    match /config/entrega {
+      allow read: if logado() && papel() in ['cliente','admin'];
+      allow write: if adm();
+    }
+    match /users/{uid} { allow read: if adm() || (logado() && request.auth.uid == uid); }
+    match /pedidos/{id} {
+      allow read: if adm()
+        || (ent() && resource.data.status != 'aguardando_pagamento')
+        || (logado() && resource.data.uid == request.auth.uid);
+      allow update: if (adm() || ent())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['em_rota','entregue'];
+    }
+    // pins, config/contador: sem acesso pelo navegador (só o servidor)
+  }
+}
