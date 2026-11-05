@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Distribuidora Campos — Painel do Dono</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#121212">
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== TELA DE LOGIN ===================== -->
+<section class="admin-login-tela" id="tela-login">
+  <img src="logo.png" alt="Distribuidora Campos" class="logo-img" style="width:100%;max-width:420px;height:auto">
+  <div class="admin-login-card">
+    <h1>Painel do Dono</h1>
+    <form id="form-login">
+      <div class="campo">
+        <label for="senha-admin">Senha de acesso</label>
+        <input type="password" id="senha-admin" placeholder="••••••••" autofocus>
+      </div>
+      <button type="submit" class="btn btn-gold btn-block">Entrar</button>
+      <div class="admin-erro" id="login-erro"></div>
+    </form>
+  </div>
+</section>
+
+<!-- ===================== PAINEL ADMIN ===================== -->
+<div id="app-admin" style="display:none">
+
+  <header class="admin-header">
+    <div class="admin-header-titulo">
+      <img src="logo.png" alt="Distribuidora Campos" class="logo-img" style="width:auto;height:40px;border-radius:6px">
+      <h1>Distribuidora Campos — Admin</h1>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="btn-sair">Sair</button>
+  </header>
+
+  <nav class="admin-tabs">
+    <button class="admin-tab ativa" data-aba="produtos">📦 Produtos</button>
+    <button class="admin-tab" data-aba="comandas">🧾 Comandas <span id="badge-pendentes"></span></button>
+    <button class="admin-tab" data-aba="config">⚙️ Configurações</button>
+  </nav>
+
+  <main class="admin-corpo">
+
+    <!-- ===================== ABA PRODUTOS ===================== -->
+    <section class="admin-aba ativa" id="aba-produtos">
+
+      <div class="painel">
+        <h2 id="titulo-form-produto">Novo produto</h2>
+        <form id="form-produto">
+          <input type="hidden" id="produto-id">
+          <div class="form-grid">
+            <div class="campo campo-full">
+              <label for="produto-nome">Nome do produto*</label>
+              <input type="text" id="produto-nome" required placeholder="Ex: Skol Lata 350ml">
+            </div>
+            <div class="campo">
+              <label for="produto-categoria">Categoria*</label>
+              <select id="produto-categoria" required></select>
+            </div>
+            <div class="campo">
+              <label for="produto-preco">Preço (R$)*</label>
+              <input type="number" id="produto-preco" step="0.01" min="0" required placeholder="0,00">
+            </div>
+            <div class="campo campo-full">
+              <label for="produto-volume">Volume / descrição curta</label>
+              <input type="text" id="produto-volume" placeholder="Ex: 350ml, Long Neck, Pacote c/ 6un.">
+            </div>
+            <div class="campo campo-full">
+              <label>Foto do produto</label>
+              <label class="upload-foto" for="produto-foto">
+                <img id="preview-foto" class="upload-foto-preview" src="" style="display:none">
+                <span class="upload-foto-texto" id="texto-upload">Toque para escolher uma imagem</span>
+              </label>
+              <input type="file" id="produto-foto" accept="image/*" style="display:none">
+            </div>
+            <div class="campo">
+              <label for="produto-disponivel">Disponibilidade</label>
+              <select id="produto-disponivel">
+                <option value="true">Disponível</option>
+                <option value="false">Esgotado</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:flex; gap:10px; margin-top:6px">
+            <button type="submit" class="btn btn-gold" id="btn-salvar-produto">Salvar produto</button>
+            <button type="button" class="btn btn-ghost" id="btn-cancelar-edicao" style="display:none">Cancelar edição</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="painel">
+        <h2>Produtos cadastrados</h2>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:-8px">
+          Arraste pelo ícone <strong>⠿</strong> para reordenar os produtos dentro de cada categoria,
+          ou arraste o cabeçalho da categoria para mudar a ordem das seções no cardápio.
+        </p>
+        <div class="campo" style="max-width:320px">
+          <input type="text" id="filtro-produtos-admin" placeholder="Buscar produto...">
+        </div>
+        <div id="lista-organizar-produtos"></div>
+        <div id="produtos-vazio" class="lista-vazia" style="display:none">Nenhum produto cadastrado ainda.</div>
+      </div>
+    </section>
+
+    <!-- ===================== ABA COMANDAS ===================== -->
+    <section class="admin-aba" id="aba-comandas">
+      <div class="painel">
+        <h2>Comandas em tempo real</h2>
+        <div id="pedidos-vazio" class="lista-vazia" style="display:none">Nenhum pedido recebido ainda.</div>
+        <div class="pedidos-grid" id="pedidos-grid"></div>
+      </div>
+    </section>
+
+    <!-- ===================== ABA CONFIGURAÇÕES ===================== -->
+    <section class="admin-aba" id="aba-config">
+
+      <div class="painel">
+        <h2>Loja</h2>
+        <div class="config-linha">
+          <div class="config-linha-texto">
+            <strong>Status da loja</strong>
+            <span>Quando fechada, os clientes veem o aviso no cardápio</span>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-loja-aberta" checked>
+            <span class="switch-trilho"></span>
+          </label>
+        </div>
+        <div class="campo" style="margin-top:16px">
+          <label for="config-whatsapp">Número de WhatsApp da loja</label>
+          <input type="text" id="config-whatsapp" placeholder="Ex: 5511999999999 (DDI+DDD+número, só números)">
+        </div>
+        <button class="btn btn-gold btn-sm" id="btn-salvar-config" style="margin-top:6px">Salvar configurações</button>
+      </div>
+
+      <div class="painel">
+        <h2>Categorias</h2>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-top:-8px">Arraste pelo ícone ⠿ para mudar a ordem em que as categorias aparecem no cardápio.</p>
+        <div id="lista-categorias-chips" style="margin-bottom:14px"></div>
+        <form id="form-categoria" style="display:flex; gap:10px">
+          <input type="text" id="nova-categoria" placeholder="Nome da nova categoria (ex: Tabacaria)" style="flex:1; background:var(--bg-input); border:1px solid var(--border-subtle); color:var(--text); padding:11px 13px; border-radius:10px;">
+          <button type="submit" class="btn btn-outline btn-sm">Adicionar</button>
+        </form>
+      </div>
+
+      <div class="painel">
+        <h2>Importar backup do sistema antigo</h2>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-top:-8px">
+          Selecione o arquivo <code>.json</code> de backup exportado do seu sistema anterior.
+          As categorias e produtos (com fotos) serão importados para o Firebase automaticamente.
+          Pode importar mais de uma vez sem duplicar — produtos e categorias já existentes são atualizados.
+        </p>
+        <input type="file" id="arquivo-backup" accept="application/json" style="margin:10px 0">
+        <br>
+        <button class="btn btn-gold btn-sm" id="btn-importar-backup">Importar arquivo</button>
+        <div id="progresso-importacao" style="margin-top:14px; display:none">
+          <div style="background:var(--bg-input); border-radius:8px; height:10px; overflow:hidden">
+            <div id="barra-importacao" style="background:linear-gradient(135deg,var(--gold-bright),var(--gold)); height:100%; width:0%; transition:width .2s"></div>
+          </div>
+          <div id="texto-importacao" style="font-size:0.8rem; color:var(--text-muted); margin-top:6px">Preparando...</div>
+        </div>
+      </div>
+
+      <div class="painel">
+        <h2>Senha de acesso</h2>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-top:-8px">
+          A senha do painel é definida no arquivo <code>firebase-config.js</code> (constante <code>ADMIN_SENHA</code>).
+          Isso é uma trava simples — não substitui autenticação de verdade. Veja o README para reforçar a segurança.
+        </p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="admin.js"></script>
+</body>
+</html>
