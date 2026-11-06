@@ -1,20 +1,21 @@
 // ============================================================
 // DISTRIBUIDORA CAMPOS — produtos-secretos.js
-// Catálogo reservado. Fluxo:
+// Catálogo reservado (somente leitura). Fluxo:
 //   1. Firebase Auth confirma o login (sem login → volta ao início).
 //   2. Firestore confirma que o UID está em usuarios_autorizados.
-//   3. Só então lê produtos_secretos (as REGRAS do Firestore também
-//      barram quem não for autorizado, mesmo fora desta página).
+//   3. Só então lê produtos_secretos / categorias_secretas (as REGRAS
+//      do Firestore também barram quem não for autorizado).
 //   4. Se a sessão cair ou a autorização for revogada, tudo é apagado
 //      da tela imediatamente e o usuário volta ao início.
+// Cadastro e edição: engrenagem ⚙️ (só admin) → painel → "Tela secreta".
 // ============================================================
 import {
   auth, db, doc, onSnapshot, collection, signOut, onAuthStateChanged,
-  usuarioAutorizado, COL_PRODUTOS_SECRETOS, COL_USUARIOS_AUTORIZADOS,
-  addDoc, updateDoc, deleteDoc, serverTimestamp
+  usuarioAutorizado, COL_PRODUTOS_SECRETOS, COL_CATEGORIAS_SECRETAS, COL_USUARIOS_AUTORIZADOS
 } from "./secreto-firebase.js";
 
 const SAIDA = "index.html";
+const PAINEL = "admin.html?modo=secreta";
 
 const elPorteiro = document.getElementById("ps-porteiro");
 const elApp      = document.getElementById("ps-app");
@@ -23,17 +24,17 @@ const elGrade    = document.getElementById("ps-grade");
 const elCats     = document.getElementById("ps-cats");
 const elBusca    = document.getElementById("ps-busca");
 const elConta    = document.getElementById("ps-contagem");
-const elNovo     = document.getElementById("ps-novo");
-const elToast    = document.getElementById("toast");
+const elAdmin    = document.getElementById("ps-admin");
 
 let produtos = [];
+let categorias = [];            // [{id, nome, ordem}]
 let categoriaAtiva = "__todas__";
 let termo = "";
 let cancelarProdutos = null;
+let cancelarCategorias = null;
 let cancelarAutorizacao = null;
 let encerrado = false;
 let iniciado = false;
-let ehAdmin = false;
 
 // ---------------- Utilitários ----------------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
@@ -48,11 +49,12 @@ function bloquearETirarDaTela(){
   if (encerrado) return;
   encerrado = true;
   try{ cancelarProdutos && cancelarProdutos(); }catch(_){}
+  try{ cancelarCategorias && cancelarCategorias(); }catch(_){}
   try{ cancelarAutorizacao && cancelarAutorizacao(); }catch(_){}
-  produtos = [];
+  produtos = []; categorias = [];
   elGrade.innerHTML = ""; elCats.innerHTML = ""; elConta.textContent = "";
   document.querySelectorAll(".ps-detalhe-fundo").forEach(n => n.remove());
-  ehAdmin = false; elNovo.hidden = true;
+  elAdmin.hidden = true;
   elApp.hidden = true;
   elPorteiro.hidden = false;
   window.location.replace(SAIDA);
@@ -78,14 +80,25 @@ onAuthStateChanged(auth, async (user) => {
   elApp.hidden = false;
 
   // Se a autorização for removida/desativada, derruba a sessão na hora.
+  // Também mostra a engrenagem só para quem tem admin: true.
   cancelarAutorizacao = onSnapshot(
     doc(db, COL_USUARIOS_AUTORIZADOS, user.uid),
     (snap) => {
       if (!snap.exists() || snap.data().ativo !== true){ sairEBloquear(); return; }
-      ehAdmin = snap.data().admin === true;
-      elNovo.hidden = !ehAdmin;
+      elAdmin.hidden = snap.data().admin !== true;
     },
     () => sairEBloquear()
+  );
+
+  // Categorias da tela secreta (criadas no painel). Se falhar, os produtos
+  // ainda aparecem; só não ordena/agrupa por categoria.
+  cancelarCategorias = onSnapshot(
+    collection(db, COL_CATEGORIAS_SECRETAS),
+    (snap) => {
+      categorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      render();
+    },
+    (err) => console.error("Categorias secretas:", err.code)
   );
 
   cancelarProdutos = onSnapshot(
@@ -103,30 +116,34 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 document.getElementById("ps-sair").addEventListener("click", sairEBloquear);
+elAdmin.addEventListener("click", () => { window.location.href = PAINEL; });
 
 // Voltar pelo histórico (bfcache) após sair não pode mostrar a área em cache.
 window.addEventListener("pageshow", (e) => { if (e.persisted && !auth.currentUser) bloquearETirarDaTela(); });
 
 // ---------------- Render ----------------
+const nomeCategoria = (p) => categorias.find(c => c.id === p.categoriaId)?.nome || p.categoria || "";
+
+// Categorias (na ordem definida no painel) que têm pelo menos um produto visível
 function categoriasDisponiveis(){
-  const set = new Set();
-  produtos.forEach(p => { if (p.categoria) set.add(String(p.categoria)); });
-  return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return [...categorias]
+    .sort((a, b) => (a.ordem || 0) - (b.ordem || 0))
+    .filter(c => produtos.some(p => p.categoriaId === c.id));
 }
 
 function renderCategorias(){
   const cats = categoriasDisponiveis();
-  if (categoriaAtiva !== "__todas__" && !cats.includes(categoriaAtiva)) categoriaAtiva = "__todas__";
+  if (categoriaAtiva !== "__todas__" && !cats.some(c => c.id === categoriaAtiva)) categoriaAtiva = "__todas__";
   const pill = (id, nome) =>
     `<button type="button" class="cat-pill ${id === categoriaAtiva ? "ativa" : ""}" data-cat="${esc(id)}">${esc(nome)}</button>`;
-  elCats.innerHTML = pill("__todas__", "Todos") + cats.map(c => pill(c, c)).join("");
+  elCats.innerHTML = pill("__todas__", "Todos") + cats.map(c => pill(c.id, c.nome)).join("");
 }
 
 function filtrados(){
   const b = normalizar(termo);
   return produtos
-    .filter(p => categoriaAtiva === "__todas__" || String(p.categoria) === categoriaAtiva)
-    .filter(p => !b || normalizar(`${p.nome} ${p.descricao} ${p.categoria}`).includes(b))
+    .filter(p => categoriaAtiva === "__todas__" || p.categoriaId === categoriaAtiva)
+    .filter(p => !b || normalizar(`${p.nome} ${p.volume} ${p.descricao} ${nomeCategoria(p)}`).includes(b))
     .sort((a, c) => (a.ordem || 0) - (c.ordem || 0) || String(a.nome).localeCompare(String(c.nome), "pt-BR"));
 }
 
@@ -149,15 +166,19 @@ function fotoHTML(p, classe = "ps-foto"){
     : `<div class="ps-foto-vazia">${ICONE_VAZIO}</div>`;
 }
 
+// texto curto: volume (campo do painel) ou descrição (produtos antigos)
+const textoCurto = (p) => p.volume || p.descricao || "";
+
 function cardHTML(p){
   const disp = p.disponivel !== false;
+  const cat = nomeCategoria(p);
   return `
     <button type="button" class="ps-card ${disp ? "" : "indisponivel"}" data-id="${esc(p.id)}">
       ${fotoHTML(p)}
       <div class="ps-info">
-        ${p.categoria ? `<span class="ps-cat">${esc(p.categoria)}</span>` : ""}
+        ${cat ? `<span class="ps-cat">${esc(cat)}</span>` : ""}
         <span class="ps-nome">${esc(p.nome)}</span>
-        ${p.descricao ? `<span class="ps-desc">${esc(p.descricao)}</span>` : ""}
+        ${textoCurto(p) ? `<span class="ps-desc">${esc(textoCurto(p))}</span>` : ""}
         <div class="ps-rodape-card">
           <span class="ps-preco">${real(p.preco)}</span>
           <span class="ps-tag ${disp ? "ok" : "off"}">${disp ? "DISPONÍVEL" : "INDISPONÍVEL"}</span>
@@ -194,6 +215,7 @@ elGrade.addEventListener("click", (e) => {
 
 function abrirDetalhe(p){
   const disp = p.disponivel !== false;
+  const cat = nomeCategoria(p);
   const f = document.createElement("div");
   f.className = "ps-detalhe-fundo";
   f.innerHTML = `
@@ -201,190 +223,21 @@ function abrirDetalhe(p){
       <button type="button" class="ps-detalhe-fechar" aria-label="Fechar">✕</button>
       ${fotoHTML(p)}
       <div class="ps-detalhe-corpo">
-        ${p.categoria ? `<span class="ps-cat">${esc(p.categoria)}</span>` : ""}
+        ${cat ? `<span class="ps-cat">${esc(cat)}</span>` : ""}
         <h2>${esc(p.nome)}</h2>
         <div class="ps-detalhe-preco">${real(p.preco)}</div>
         <div><span class="ps-tag ${disp ? "ok" : "off"}">${disp ? "DISPONÍVEL" : "INDISPONÍVEL"}</span></div>
+        ${p.volume ? `<p>${esc(p.volume)}</p>` : ""}
         ${p.descricao ? `<p>${esc(p.descricao)}</p>` : ""}
-        ${ehAdmin ? `<button type="button" class="btn btn-gold btn-block ps-editar" style="margin-top:10px">Editar produto</button>` : ""}
       </div>
     </div>`;
   const fechar = () => { f.remove(); document.removeEventListener("keydown", tecla); };
   const tecla = (e) => { if (e.key === "Escape") fechar(); };
   f.addEventListener("click", (e) => { if (e.target === f) fechar(); });
   f.querySelector(".ps-detalhe-fechar").addEventListener("click", fechar);
-  f.querySelector(".ps-editar")?.addEventListener("click", () => { fechar(); abrirFormulario(p); });
   f.querySelector("img.ps-foto")?.addEventListener("error", (e) => {
     const v = document.createElement("div"); v.className = "ps-foto-vazia"; v.innerHTML = ICONE_VAZIO; e.target.replaceWith(v);
   });
   document.addEventListener("keydown", tecla);
   document.body.appendChild(f);
-}
-
-// ============================================================
-// GERENCIAR PRODUTOS (só contas com admin: true em usuarios_autorizados)
-// As regras do Firestore também exigem isso — esconder o botão é só conforto.
-// ============================================================
-function toast(msg, erro = false){
-  elToast.textContent = msg;
-  elToast.classList.toggle("erro", erro);
-  elToast.classList.add("mostrar");
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => elToast.classList.remove("mostrar"), 3200);
-}
-
-// "12,50" | "1.234,56" | "12.5" → número
-function lerPreco(txt){
-  let t = String(txt).trim().replace(/[^\d.,]/g, "");
-  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
-  const n = Number(t);
-  return t !== "" && Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
-}
-
-// Foto → JPEG comprimido em Base64 (máx. 600px), igual à abordagem do painel atual
-function comprimirFoto(arquivo, max = 600, qualidade = 0.78){
-  return new Promise((ok, falha) => {
-    const url = URL.createObjectURL(arquivo);
-    const img = new Image();
-    img.onload = () => {
-      const r = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(img.width * r));
-      c.height = Math.max(1, Math.round(img.height * r));
-      const ctx = c.getContext("2d");
-      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      ok(c.toDataURL("image/jpeg", qualidade));
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); falha(new Error("imagem")); };
-    img.src = url;
-  });
-}
-
-elNovo.addEventListener("click", () => abrirFormulario(null));
-
-function abrirFormulario(p){
-  if (!ehAdmin) return;
-  const novo = !p;
-  let imagem = p?.imagemUrl || "";
-  const cats = categoriasDisponiveis();
-  const f = document.createElement("div");
-  f.className = "ps-detalhe-fundo";
-  f.innerHTML = `
-    <form class="ps-detalhe ps-form" role="dialog" aria-modal="true" novalidate>
-      <button type="button" class="ps-detalhe-fechar" aria-label="Fechar">✕</button>
-      <h2 class="ps-form-titulo">${novo ? "Novo produto" : "Editar produto"}</h2>
-      <div class="ps-form-corpo">
-        <div class="ps-foto-box">
-          <div class="ps-foto-previa"></div>
-          <div class="ps-foto-botoes">
-            <label class="btn btn-outline btn-sm">Escolher foto
-              <input type="file" accept="image/*" hidden>
-            </label>
-            <button type="button" class="btn btn-ghost btn-sm ps-foto-remover">Remover</button>
-          </div>
-        </div>
-        <div class="campo"><label for="pf-nome">Nome*</label>
-          <input id="pf-nome" type="text" maxlength="120" autocomplete="off" value="${esc(p?.nome || "")}"></div>
-        <div class="campo"><label for="pf-cat">Categoria*</label>
-          <input id="pf-cat" type="text" maxlength="60" list="pf-cats" autocomplete="off" value="${esc(p?.categoria || "")}">
-          <datalist id="pf-cats">${cats.map(c => `<option value="${esc(c)}">`).join("")}</datalist></div>
-        <div class="ps-form-linha">
-          <div class="campo"><label for="pf-preco">Preço (R$)*</label>
-            <input id="pf-preco" type="text" inputmode="decimal" autocomplete="off" value="${p ? String(p.preco ?? "").replace(".", ",") : ""}"></div>
-          <div class="campo"><label for="pf-ordem">Ordem</label>
-            <input id="pf-ordem" type="number" inputmode="numeric" value="${p?.ordem ?? ""}"></div>
-        </div>
-        <div class="campo"><label for="pf-desc">Descrição</label>
-          <textarea id="pf-desc" maxlength="1000">${esc(p?.descricao || "")}</textarea></div>
-        <label class="checkbox-confirma"><input type="checkbox" id="pf-disp" ${p?.disponivel === false ? "" : "checked"}><span>Disponível</span></label>
-        <label class="checkbox-confirma" style="margin-top:8px"><input type="checkbox" id="pf-vis" ${p?.visivel === false ? "" : "checked"}><span>Visível no catálogo</span></label>
-        <p class="ps-form-erro" role="alert"></p>
-        <button type="submit" class="btn btn-gold btn-block ps-salvar"><span class="ps-salvar-txt">Salvar</span><span class="spinner" hidden style="width:16px;height:16px"></span></button>
-        ${novo ? "" : `<button type="button" class="btn btn-danger btn-block ps-excluir" style="margin-top:10px">Excluir produto</button>`}
-      </div>
-    </form>`;
-  document.body.appendChild(f);
-
-  const q = (s) => f.querySelector(s);
-  const erroEl = q(".ps-form-erro");
-  const previa = q(".ps-foto-previa");
-  let ocupado = false;
-
-  function mostrarPrevia(){
-    const src = urlImagemSegura(imagem);
-    previa.innerHTML = src ? `<img src="${esc(src)}" alt="">` : `<div class="ps-foto-vazia">${ICONE_VAZIO}</div>`;
-    q(".ps-foto-remover").hidden = !src;
-  }
-  mostrarPrevia();
-
-  const fechar = () => { if (ocupado) return; f.remove(); document.removeEventListener("keydown", tecla); };
-  const tecla = (e) => { if (e.key === "Escape") fechar(); };
-  document.addEventListener("keydown", tecla);
-  q(".ps-detalhe-fechar").addEventListener("click", fechar);
-  f.addEventListener("click", (e) => { if (e.target === f) fechar(); });
-
-  q('input[type=file]').addEventListener("change", async (e) => {
-    const arq = e.target.files[0]; e.target.value = "";
-    if (!arq) return;
-    erroEl.textContent = "";
-    try{ imagem = await comprimirFoto(arq); mostrarPrevia(); }
-    catch(_){ erroEl.textContent = "Não foi possível ler essa imagem."; }
-  });
-  q(".ps-foto-remover").addEventListener("click", () => { imagem = ""; mostrarPrevia(); });
-
-  function ocupar(v){
-    ocupado = v;
-    f.querySelectorAll("button, input, textarea").forEach(el => el.disabled = v);
-    q(".spinner").hidden = !v;
-    q(".ps-salvar-txt").textContent = v ? "Salvando..." : "Salvar";
-  }
-
-  f.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (ocupado) return;
-    const nome = q("#pf-nome").value.trim();
-    const categoria = q("#pf-cat").value.trim();
-    const preco = lerPreco(q("#pf-preco").value);
-    const ordemTxt = q("#pf-ordem").value.trim();
-    if (!nome) return erroEl.textContent = "Informe o nome do produto.";
-    if (!categoria) return erroEl.textContent = "Informe a categoria.";
-    if (preco === null) return erroEl.textContent = "Informe um preço válido (ex: 12,50).";
-    const dados = {
-      nome, categoria, preco,
-      descricao: q("#pf-desc").value.trim(),
-      imagemUrl: imagem,
-      disponivel: q("#pf-disp").checked,
-      visivel: q("#pf-vis").checked,
-      ordem: ordemTxt === "" ? 0 : Number(ordemTxt),
-      atualizadoEm: serverTimestamp()
-    };
-    erroEl.textContent = "";
-    ocupar(true);
-    try{
-      if (novo) await addDoc(collection(db, COL_PRODUTOS_SECRETOS), dados);
-      else await updateDoc(doc(db, COL_PRODUTOS_SECRETOS, p.id), dados);
-      ocupado = false; fechar();
-      toast(novo ? "Produto adicionado!" : "Produto atualizado!");
-    }catch(err){
-      ocupar(false);
-      erroEl.textContent = err.code === "permission-denied"
-        ? "Sem permissão para salvar. Sua conta precisa de admin: true e as regras atualizadas."
-        : "Não foi possível salvar agora. Tente novamente.";
-    }
-  });
-
-  q(".ps-excluir")?.addEventListener("click", async () => {
-    if (ocupado) return;
-    if (!confirm(`Excluir "${p.nome}" definitivamente?`)) return;
-    ocupar(true);
-    try{
-      await deleteDoc(doc(db, COL_PRODUTOS_SECRETOS, p.id));
-      ocupado = false; fechar(); toast("Produto excluído.");
-    }catch(_){
-      ocupar(false); erroEl.textContent = "Não foi possível excluir agora.";
-    }
-  });
-  setTimeout(() => q("#pf-nome").focus(), 50);
 }

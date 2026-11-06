@@ -25,9 +25,6 @@ export const db = getFirestore(app);
 // WhatsApp da loja (55 + DDD + número, só dígitos)
 export const WHATSAPP_LOJA_PADRAO = "5561999123044"; // CONFIRME: (61) 99912-3044
 
-// Senha do painel do dono (trava simples, não é segurança real)
-export const ADMIN_SENHA = "Campos@2026"; // <-- TROQUE AQUI
-
 export const COL_PRODUTOS = "produtos";
 export const COL_CATEGORIAS = "categorias";
 export const COL_PEDIDOS = "pedidos";

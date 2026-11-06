@@ -1,7 +1,11 @@
 // ============================================================
 // DISTRIBUIDORA CAMPOS — admin.js (painel do dono)
 // ============================================================
-import { db, ADMIN_SENHA, COL_PRODUTOS, COL_CATEGORIAS, COL_PEDIDOS } from "./firebase-config.js";
+import { db, COL_PRODUTOS, COL_CATEGORIAS, COL_PEDIDOS } from "./firebase-config.js";
+import {
+  auth, onAuthStateChanged, signOut,
+  COL_USUARIOS_AUTORIZADOS, COL_PRODUTOS_SECRETOS, COL_CATEGORIAS_SECRETAS
+} from "./secreto-firebase.js";
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, setDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp
@@ -14,6 +18,24 @@ let pedidos = [];
 let edicaoProdutoId = null;
 let fotoBase64Selecionada = null; // string Base64 já comprimida, pronta pra gravar no Firestore
 let primeiraCargaPedidos = true;
+
+// ---------------- Modo: qual "tela" está sendo editada ----------------
+// A ferramenta é a mesma; só mudam as coleções do Firestore usadas.
+const MODOS = {
+  inicial: { rotulo: "Tela inicial", descricao: "cardápio público",    produtos: COL_PRODUTOS,         categorias: COL_CATEGORIAS },
+  secreta: { rotulo: "Tela secreta", descricao: "catálogo reservado",  produtos: COL_PRODUTOS_SECRETOS, categorias: COL_CATEGORIAS_SECRETAS }
+};
+const CHAVE_MODO = "distcampos_modo";
+function modoInicial(){
+  const url = new URLSearchParams(location.search).get("modo");
+  if (url && MODOS[url]) return url;
+  let salvo = null;
+  try{ salvo = sessionStorage.getItem(CHAVE_MODO); }catch(_){}
+  return salvo && MODOS[salvo] ? salvo : "inicial";
+}
+let modo = modoInicial();
+const colP = () => MODOS[modo].produtos;
+const colC = () => MODOS[modo].categorias;
 
 // ============================================================
 // COMPRESSÃO DE IMAGEM (Canvas) — sem Firebase Storage
@@ -62,36 +84,106 @@ function formatarReal(v){
 }
 
 // ============================================================
-// LOGIN
+// ACESSO — só entra quem está logado (Firebase Authentication) E tem
+// admin: true em usuarios_autorizados/{uid}. O painel não tem mais senha
+// própria nem link na tela inicial: a porta de entrada é a engrenagem
+// da área secreta. As regras do Firestore também exigem admin para gravar.
 // ============================================================
 const telaLogin = document.getElementById("tela-login");
 const appAdmin = document.getElementById("app-admin");
+const PAGINA_INICIAL = "index.html";
+const PAGINA_SECRETA = "produtos-secretos.html";
+
+let verificando = false;
+let painelAberto = false;
+let cancelarAutorizacao = null;
+let cancelarCategorias = null;
+let cancelarProdutos = null;
+
+function irPara(pagina){
+  try{ cancelarAutorizacao && cancelarAutorizacao(); }catch(_){}
+  window.location.replace(pagina);
+}
+
+async function sairDaConta(){
+  try{ await signOut(auth); }catch(_){}
+  irPara(PAGINA_INICIAL);
+}
 
 function entrarNoPainel(){
+  painelAberto = true;
   telaLogin.style.display = "none";
   appAdmin.style.display = "block";
+  atualizarBarraModo();
   iniciarListeners();
 }
 
-if (sessionStorage.getItem("distcampos_admin_logado") === "1"){
+onAuthStateChanged(auth, async (user) => {
+  if (!user){ irPara(PAGINA_INICIAL); return; }     // sem sessão / saiu da conta
+  if (verificando || painelAberto) return;
+  verificando = true;
+
+  let ok = false, autorizadoSemAdmin = false;
+  try{
+    const snap = await getDoc(doc(db, COL_USUARIOS_AUTORIZADOS, user.uid));
+    const d = snap.exists() ? snap.data() : null;
+    ok = !!d && d.ativo === true && d.admin === true;
+    autorizadoSemAdmin = !!d && d.ativo === true && !ok;
+  }catch(_){ ok = false; }
+
+  if (!ok){ irPara(autorizadoSemAdmin ? PAGINA_SECRETA : PAGINA_INICIAL); return; }
+
+  // Se o admin for removido/desativado com o painel aberto, sai na hora.
+  cancelarAutorizacao = onSnapshot(
+    doc(db, COL_USUARIOS_AUTORIZADOS, user.uid),
+    (s) => {
+      const d = s.exists() ? s.data() : null;
+      if (!d || d.ativo !== true || d.admin !== true) irPara(PAGINA_SECRETA);
+    },
+    () => irPara(PAGINA_INICIAL)
+  );
   entrarNoPainel();
+});
+
+document.getElementById("btn-sair").addEventListener("click", sairDaConta);
+
+// ============================================================
+// ALTERNAR TELA INICIAL / TELA SECRETA
+// ============================================================
+function atualizarBarraModo(){
+  const m = MODOS[modo];
+  document.querySelectorAll(".modo-btn").forEach(b => b.classList.toggle("ativa", b.dataset.modo === modo));
+  const leg = document.getElementById("modo-legenda");
+  if (leg) leg.textContent = `Editando agora: ${m.rotulo} (${m.descricao})`;
+  document.querySelectorAll(".modo-tag").forEach(t => { t.textContent = `— ${m.rotulo}`; });
 }
 
-document.getElementById("form-login").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const senha = document.getElementById("senha-admin").value;
-  if (senha === ADMIN_SENHA){
-    sessionStorage.setItem("distcampos_admin_logado", "1");
-    entrarNoPainel();
-  } else {
-    document.getElementById("login-erro").textContent = "Senha incorreta. Tente novamente.";
-  }
+function trocarModo(novo){
+  if (!MODOS[novo] || novo === modo) return;
+  modo = novo;
+  try{ sessionStorage.setItem(CHAVE_MODO, modo); }catch(_){}
+  try{ cancelarCategorias && cancelarCategorias(); }catch(_){}
+  try{ cancelarProdutos && cancelarProdutos(); }catch(_){}
+  categorias = [];
+  produtos = [];
+  resetFormProduto();
+  renderSelectCategorias();
+  renderChipsCategorias();
+  renderTabelaProdutos();
+  atualizarBarraModo();
+  listenCategorias();
+  listenProdutos();
+}
+
+document.querySelectorAll(".modo-btn").forEach(btn => {
+  btn.addEventListener("click", () => trocarModo(btn.dataset.modo));
 });
 
-document.getElementById("btn-sair").addEventListener("click", () => {
-  sessionStorage.removeItem("distcampos_admin_logado");
-  location.reload();
-});
+function avisarErroLeitura(err){
+  if (err && err.code === "permission-denied"){
+    mostrarToast("Sem permissão para ler. Publique as regras novas (firestore.rules) no Firebase.", true);
+  }
+}
 
 // ============================================================
 // ABAS
@@ -119,12 +211,12 @@ function iniciarListeners(){
 // CATEGORIAS
 // ============================================================
 function listenCategorias(){
-  onSnapshot(query(collection(db, COL_CATEGORIAS), orderBy("ordem")), (snap) => {
+  cancelarCategorias = onSnapshot(query(collection(db, colC()), orderBy("ordem")), (snap) => {
     categorias = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderSelectCategorias();
     renderChipsCategorias();
     renderTabelaProdutos();
-  }, (err) => console.error("Erro categorias:", err));
+  }, (err) => { console.error("Erro categorias:", err); avisarErroLeitura(err); });
 }
 
 function renderSelectCategorias(){
@@ -157,7 +249,7 @@ function renderChipsCategorias(){
         ? "Existem produtos nessa categoria. Excluir mesmo assim? Os produtos continuarão existindo, mas ficarão sem categoria visível."
         : "Remover esta categoria?";
       if (!confirm(aviso)) return;
-      await deleteDoc(doc(db, COL_CATEGORIAS, btn.dataset.delCat));
+      await deleteDoc(doc(db, colC(), btn.dataset.delCat));
       mostrarToast("Categoria removida.");
     });
   });
@@ -171,7 +263,7 @@ document.getElementById("form-categoria").addEventListener("submit", async (e) =
   const nome = input.value.trim();
   if (!nome) return;
   try{
-    await addDoc(collection(db, COL_CATEGORIAS), { nome, ordem: categorias.length });
+    await addDoc(collection(db, colC()), { nome, ordem: categorias.length });
     input.value = "";
     mostrarToast("Categoria adicionada.");
   } catch(err){
@@ -184,10 +276,10 @@ document.getElementById("form-categoria").addEventListener("submit", async (e) =
 // PRODUTOS
 // ============================================================
 function listenProdutos(){
-  onSnapshot(collection(db, COL_PRODUTOS), (snap) => {
+  cancelarProdutos = onSnapshot(collection(db, colP()), (snap) => {
     produtos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderTabelaProdutos();
-  }, (err) => console.error("Erro produtos:", err));
+  }, (err) => { console.error("Erro produtos:", err); avisarErroLeitura(err); });
 }
 
 // ao escolher a foto: comprime no Canvas (máx. 400x400, JPEG 0.75) e já
@@ -254,17 +346,19 @@ document.getElementById("form-produto").addEventListener("submit", async (e) => 
     };
 
     if (edicaoProdutoId){
-      await updateDoc(doc(db, COL_PRODUTOS, edicaoProdutoId), dadosProduto);
+      await updateDoc(doc(db, colP(), edicaoProdutoId), dadosProduto);
       mostrarToast("Produto atualizado!");
     } else {
-      await addDoc(collection(db, COL_PRODUTOS), { ...dadosProduto, ordem: produtos.length });
+      await addDoc(collection(db, colP()), { ...dadosProduto, ordem: produtos.length });
       mostrarToast("Produto cadastrado!");
     }
 
     resetFormProduto();
   } catch(err){
     console.error(err);
-    mostrarToast("Erro ao salvar produto. Verifique a configuração do Firebase.", true);
+    mostrarToast(err && err.code === "permission-denied"
+      ? "Sem permissão para salvar. Publique as regras novas do Firestore e confirme admin: true."
+      : "Erro ao salvar produto. Verifique a configuração do Firebase.", true);
   }
 
   btnSalvar.disabled = false;
@@ -366,7 +460,7 @@ function ativarArrastar(container, aoSoltar){
 
 async function persistirOrdemProdutos(itensDom){
   try{
-    await Promise.all(itensDom.map((el, i) => updateDoc(doc(db, COL_PRODUTOS, el.dataset.id), { ordem: i })));
+    await Promise.all(itensDom.map((el, i) => updateDoc(doc(db, colP(), el.dataset.id), { ordem: i })));
   } catch(err){
     console.error(err);
     mostrarToast("Erro ao salvar a nova ordem dos produtos.", true);
@@ -375,7 +469,7 @@ async function persistirOrdemProdutos(itensDom){
 
 async function persistirOrdemCategorias(itensDom){
   try{
-    await Promise.all(itensDom.map((el, i) => updateDoc(doc(db, COL_CATEGORIAS, el.dataset.id), { ordem: i })));
+    await Promise.all(itensDom.map((el, i) => updateDoc(doc(db, colC(), el.dataset.id), { ordem: i })));
     mostrarToast("Ordem atualizada!");
   } catch(err){
     console.error(err);
@@ -422,7 +516,7 @@ async function alternarVisibilidade(id){
   const p = produtos.find(x => x.id === id);
   if (!p) return;
   try{
-    await updateDoc(doc(db, COL_PRODUTOS, id), { visivel: !(p.visivel !== false) });
+    await updateDoc(doc(db, colP(), id), { visivel: !(p.visivel !== false) });
   } catch(err){
     console.error(err);
     mostrarToast("Erro ao atualizar a visibilidade do produto.", true);
@@ -524,7 +618,7 @@ async function alternarDisponibilidade(id){
   const p = produtos.find(x => x.id === id);
   if (!p) return;
   try{
-    await updateDoc(doc(db, COL_PRODUTOS, id), { disponivel: !(p.disponivel !== false) });
+    await updateDoc(doc(db, colP(), id), { disponivel: !(p.disponivel !== false) });
   } catch(err){
     console.error(err);
     mostrarToast("Erro ao atualizar disponibilidade.", true);
@@ -534,7 +628,7 @@ async function alternarDisponibilidade(id){
 async function excluirProduto(id){
   if (!confirm("Excluir este produto definitivamente?")) return;
   try{
-    await deleteDoc(doc(db, COL_PRODUTOS, id));
+    await deleteDoc(doc(db, colP(), id));
     mostrarToast("Produto excluído.");
   } catch(err){
     console.error(err);
@@ -691,7 +785,7 @@ async function importarBackup(){
     const nome = categoriasBackup[i];
     if (!nome || mapaCategoria[nome]) continue;
     try{
-      const refCat = await addDoc(collection(db, COL_CATEGORIAS), { nome, ordem: categorias.length + i });
+      const refCat = await addDoc(collection(db, colC()), { nome, ordem: categorias.length + i });
       mapaCategoria[nome] = refCat.id;
     } catch(err){
       console.error("Erro ao importar categoria", nome, err);
@@ -713,7 +807,7 @@ async function importarBackup(){
         ? p.image
         : "";
       const docId = String(p.code || nomeProduto).replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
-      await setDoc(doc(db, COL_PRODUTOS, docId), {
+      await setDoc(doc(db, colP(), docId), {
         nome: nomeProduto,
         categoriaId: mapaCategoria[p.categoria] || "",
         preco: Number(p.price) || 0,

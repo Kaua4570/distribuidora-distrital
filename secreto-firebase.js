@@ -19,6 +19,7 @@ import {
 export const auth = initializeAuth(app, { persistence: browserSessionPersistence });
 
 export const COL_PRODUTOS_SECRETOS = "produtos_secretos";
+export const COL_CATEGORIAS_SECRETAS = "categorias_secretas";
 export const COL_USUARIOS_AUTORIZADOS = "usuarios_autorizados";
 
 export { db, doc, getDoc, onSnapshot, collection, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, signInWithEmailAndPassword, signOut, onAuthStateChanged };

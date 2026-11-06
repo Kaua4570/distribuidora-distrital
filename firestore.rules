@@ -3,17 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ============================================================
-    // ÁREA PÚBLICA E PAINEL ATUAL — IDÊNTICO ao que já estava em uso.
-    // (Mantido aberto para não quebrar o site e o admin.html atuais,
-    //  que ainda não usam Firebase Authentication. Veja o aviso no README.)
-    // ============================================================
-    match /produtos/{id}     { allow read: if true; allow write: if true; }
-    match /categorias/{id}   { allow read: if true; allow write: if true; }
-    match /pedidos/{id}      { allow read: if true; allow create: if true; allow update, delete: if true; }
-    match /config/{id}       { allow read: if true; allow write: if true; }
-
-    // ============================================================
-    // ÁREA SECRETA
+    // FUNÇÕES AUXILIARES
     // ============================================================
 
     // Logado no Firebase Authentication?
@@ -28,6 +18,75 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.ativo == true;
     }
 
+    // Administrador: autorizado E com admin == true no próprio documento de autorização.
+    // (admin só pode ser definido pelo Console do Firebase, pois usuarios_autorizados é imutável pelo app.)
+    function admin() {
+      return autorizado()
+        && get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.get('admin', false) == true;
+    }
+
+    // Validação dos dados de produto (usada nas duas telas: inicial e secreta).
+    function produtoValido() {
+      let d = request.resource.data;
+      return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 120
+        && d.categoriaId is string && d.categoriaId.size() > 0 && d.categoriaId.size() <= 120
+        && d.preco is number && d.preco >= 0
+        && d.get('volume', '') is string && d.get('volume', '').size() <= 200
+        && d.get('descricao', '') is string && d.get('descricao', '').size() <= 1000
+        && d.get('imagemUrl', '') is string && d.get('imagemUrl', '').size() <= 700000
+        && d.get('disponivel', true) is bool
+        && d.get('visivel', true) is bool;
+    }
+
+    // Validação mais folgada para a tela inicial: produtos antigos (importados do backup)
+    // podem ter categoria vazia ou foto grande, e ainda assim precisam poder ser reordenados.
+    function produtoPublicoValido() {
+      let d = request.resource.data;
+      return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 120
+        && d.preco is number && d.preco >= 0
+        && d.get('categoriaId', '') is string
+        && d.get('disponivel', true) is bool
+        && d.get('visivel', true) is bool;
+    }
+
+    // Validação de categoria.
+    function categoriaValida() {
+      let d = request.resource.data;
+      return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 60
+        && d.get('ordem', 0) is number;
+    }
+
+    // ============================================================
+    // TELA INICIAL (cardápio público)
+    //  - ler: qualquer pessoa
+    //  - gravar: somente administrador (painel aberto pela engrenagem)
+    // ============================================================
+    match /produtos/{id} {
+      allow read: if true;
+      allow create, update: if admin() && produtoPublicoValido();
+      allow delete: if admin();
+    }
+    match /categorias/{id} {
+      allow read: if true;
+      allow create, update: if admin() && categoriaValida();
+      allow delete: if admin();
+    }
+    match /config/{id} {
+      allow read: if true;
+      allow write: if admin();
+    }
+
+    // Pedidos: a tela inicial não tem mais carrinho, então ninguém cria pedido
+    // pelo site. O administrador lê e atualiza as comandas no painel.
+    // (Se um dia o carrinho voltar, é aqui que reabre o "create".)
+    match /pedidos/{id} {
+      allow read, create, update, delete: if admin();
+    }
+
+    // ============================================================
+    // TELA SECRETA
+    // ============================================================
+
     // UIDs autorizados.
     //  - Cada usuário só consegue LER o próprio documento (para o app saber se foi liberado).
     //  - Ninguém consegue listar, criar, alterar ou apagar pelo app/cliente:
@@ -38,31 +97,19 @@ service cloud.firestore {
       allow list, create, update, delete: if false;
     }
 
-    // Administrador: autorizado E com admin == true no próprio documento de autorização.
-    // (admin só pode ser definido pelo Console do Firebase, pois usuarios_autorizados é imutável pelo app.)
-    function admin() {
-      return autorizado()
-        && get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.get('admin', false) == true;
-    }
-
-    // Validação dos dados gravados em produtos_secretos.
-    function produtoValido() {
-      let d = request.resource.data;
-      return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 120
-        && d.categoria is string && d.categoria.size() > 0 && d.categoria.size() <= 60
-        && d.preco is number && d.preco >= 0
-        && d.get('descricao', '') is string && d.get('descricao', '').size() <= 1000
-        && d.get('imagemUrl', '') is string && d.get('imagemUrl', '').size() <= 700000
-        && d.get('disponivel', true) is bool
-        && d.get('visivel', true) is bool;
-    }
-
     // Produtos secretos:
     //  - ler: qualquer usuário autorizado e ativo
     //  - criar/editar/excluir: somente administradores (e com dados válidos)
     match /produtos_secretos/{id} {
       allow get, list: if autorizado();
       allow create, update: if admin() && produtoValido();
+      allow delete: if admin();
+    }
+
+    // Categorias da tela secreta (mesma ferramenta do painel).
+    match /categorias_secretas/{id} {
+      allow get, list: if autorizado();
+      allow create, update: if admin() && categoriaValida();
       allow delete: if admin();
     }
 

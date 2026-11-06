@@ -11,20 +11,11 @@
 </head>
 <body>
 
-<!-- ===================== TELA DE LOGIN ===================== -->
+<!-- ===================== PORTEIRO ===================== -->
+<!-- Sem senha própria: o acesso é checado no Firebase (login + admin: true). -->
 <section class="admin-login-tela" id="tela-login">
   <img src="logo.png" alt="Distribuidora Campos" class="logo-img" style="width:100%;max-width:420px;height:auto">
-  <div class="admin-login-card">
-    <h1>Painel do Dono</h1>
-    <form id="form-login">
-      <div class="campo">
-        <label for="senha-admin">Senha de acesso</label>
-        <input type="password" id="senha-admin" placeholder="••••••••" autofocus>
-      </div>
-      <button type="submit" class="btn btn-gold btn-block">Entrar</button>
-      <div class="admin-erro" id="login-erro"></div>
-    </form>
-  </div>
+  <div class="spinner" aria-label="Verificando acesso"></div>
 </section>
 
 <!-- ===================== PAINEL ADMIN ===================== -->
@@ -37,6 +28,16 @@
     </div>
     <button class="btn btn-ghost btn-sm" id="btn-sair">Sair</button>
   </header>
+
+  <!-- Alterna entre editar a Tela inicial (pública) e a Tela secreta — mesma ferramenta -->
+  <div class="modo-barra">
+    <div class="modo-botoes" role="group" aria-label="Qual tela editar">
+      <button type="button" class="modo-btn" data-modo="inicial">🏠 Tela inicial</button>
+      <button type="button" class="modo-btn" data-modo="secreta">🔒 Tela secreta</button>
+    </div>
+    <div class="modo-legenda" id="modo-legenda"></div>
+    <a class="modo-voltar" href="produtos-secretos.html">← Voltar ao catálogo reservado</a>
+  </div>
 
   <nav class="admin-tabs">
     <button class="admin-tab ativa" data-aba="produtos">📦 Produtos</button>
@@ -94,7 +95,7 @@
       </div>
 
       <div class="painel">
-        <h2>Produtos cadastrados</h2>
+        <h2>Produtos cadastrados <span class="modo-tag"></span></h2>
         <p style="font-size:0.8rem; color:var(--text-muted); margin-top:-8px">
           Arraste pelo ícone <strong>⠿</strong> para reordenar os produtos dentro de cada categoria,
           ou arraste o cabeçalho da categoria para mudar a ordem das seções no cardápio.
@@ -139,7 +140,7 @@
       </div>
 
       <div class="painel">
-        <h2>Categorias</h2>
+        <h2>Categorias <span class="modo-tag"></span></h2>
         <p style="font-size:0.8rem; color:var(--text-muted); margin-top:-8px">Arraste pelo ícone ⠿ para mudar a ordem em que as categorias aparecem no cardápio.</p>
         <div id="lista-categorias-chips" style="margin-bottom:14px"></div>
         <form id="form-categoria" style="display:flex; gap:10px">
@@ -154,6 +155,7 @@
           Selecione o arquivo <code>.json</code> de backup exportado do seu sistema anterior.
           As categorias e produtos (com fotos) serão importados para o Firebase automaticamente.
           Pode importar mais de uma vez sem duplicar — produtos e categorias já existentes são atualizados.
+          A importação vai para a tela escolhida lá em cima (Tela inicial ou Tela secreta).
         </p>
         <input type="file" id="arquivo-backup" accept="application/json" style="margin:10px 0">
         <br>
@@ -167,10 +169,11 @@
       </div>
 
       <div class="painel">
-        <h2>Senha de acesso</h2>
+        <h2>Acesso</h2>
         <p style="font-size:0.82rem; color:var(--text-muted); margin-top:-8px">
-          A senha do painel é definida no arquivo <code>firebase-config.js</code> (constante <code>ADMIN_SENHA</code>).
-          Isso é uma trava simples — não substitui autenticação de verdade. Veja o README para reforçar a segurança.
+          Este painel só abre pela engrenagem ⚙️ da área secreta, com login do Firebase Authentication
+          e a permissão <code>admin: true</code> no seu documento em <code>usuarios_autorizados</code>.
+          Não existe mais senha local nem link na tela inicial.
         </p>
       </div>
     </section>

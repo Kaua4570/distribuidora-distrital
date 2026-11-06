@@ -410,3 +410,15 @@ a{ color:inherit; }
 .linha-categoria-nome{ flex:1; font-weight:600; font-size:0.88rem; }
 
 .rodape-nota{ text-align:center; font-size:0.72rem; color:var(--text-faint); padding:24px 16px 8px; }
+
+
+/* ============================================================
+   ADMIN — alternar Tela inicial / Tela secreta
+   ============================================================ */
+.modo-barra{ background:var(--bg-elevated); border-bottom:1px solid var(--border-subtle); padding:12px 14px 10px; }
+.modo-botoes{ display:grid; grid-template-columns:1fr 1fr; gap:8px; max-width:520px; margin:0 auto; }
+.modo-btn{ padding:12px 10px; border-radius:10px; background:var(--bg-input); border:1.5px solid var(--border-subtle); color:var(--text-muted); font-weight:700; font-size:0.9rem; }
+.modo-btn.ativa{ background:var(--gold); border-color:var(--gold); color:#171204; }
+.modo-legenda{ text-align:center; color:var(--text-muted); font-size:0.78rem; margin-top:8px; }
+.modo-voltar{ display:block; text-align:center; color:var(--gold); font-size:0.8rem; font-weight:700; margin-top:6px; text-decoration:none; }
+.modo-tag{ color:var(--gold); font-size:0.8em; font-weight:600; }
