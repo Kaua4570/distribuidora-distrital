@@ -5,6 +5,7 @@ como banco de dados/armazenamento de fotos.
 
 ## Arquivos
 - `index.html` + `app.js` — tela inicial (vitrine pública: produtos, busca e categorias; **sem carrinho**)
+- `entregador.html` + `entregador.js/.css` — tela do entregador (botão "+" e a rota dele)
 - `admin.html` + `admin.js` — painel do dono (produtos, comandas, configurações, importação de backup).
   **Só abre pela engrenagem ⚙️ da área secreta** (login Firebase + `admin: true`); alterna entre **Tela inicial** e **Tela secreta**
 - `style.css` — visual (tema dark + dourado), usado pelos dois
@@ -15,7 +16,9 @@ como banco de dados/armazenamento de fotos.
 Cole o conteúdo de `firestore.rules` em **Firestore Database → Regras → Publicar**.
 O arquivo cobre tudo: tela inicial, tela secreta e painel. Resumo:
 - `produtos`, `categorias`, `config`: **leitura pública**, gravação **só admin**.
-- `pedidos`: só admin (a tela inicial não tem mais carrinho).
+- `pedidos`: cliente cria e lê só os dele; entregador entra na própria rota; admin e "comanda" veem e atualizam tudo.
+- `usuarios_autorizados`: admin libera/bloqueia/remove logins pelo painel (nunca concede `admin`, isso é só pelo Console).
+- `contadores`: número sequencial do pedido (1, 2, 3...).
 - `produtos_secretos`, `categorias_secretas`: leitura para usuários autorizados, gravação só admin.
 
 Este projeto **não usa Firebase Storage** — roda 100% no plano gratuito (Spark).
@@ -148,8 +151,35 @@ Com `admin: true` no seu documento de `usuarios_autorizados`, aparece uma **engr
 **Simulador de regras** do Console (aba Regras → Playground): leitura de `/produtos_secretos/x`
 sem autenticação deve ser **negada**; autenticado com um UID que tem `usuarios_autorizados/{uid}.ativo == true`, **permitida**.
 
+## 🔑 Logins por tipo (cliente, entregador, comanda)
+1. No Firebase: **Authentication → Users → Add user** (e-mail + senha). Copie o **User UID**.
+2. No painel (⚙️ → aba **👥 Logins**): cole o UID, escolha o tipo e toque em **Liberar acesso**.
+   Dá para trocar o tipo, **bloquear/reativar** e **remover** depois.
+
+| Tipo | Para onde vai ao entrar | O que faz |
+|---|---|---|
+| **Cliente** | Catálogo reservado | Monta o carrinho e faz pedido de entrega; acompanha os pedidos |
+| **Entregador** | `entregador.html` | Só um **+**: digita o nº do pedido e ele entra na rota dele |
+| **Comanda** | `admin.html` (só a aba Comandas) | Vê os pedidos, muda o status e marca como pago |
+| **Admin** (você) | Catálogo reservado + ⚙️ | Tudo; também pode fazer pedido (para testar). `admin: true` só pelo Console |
+
+Logins antigos sem `tipo` continuam funcionando como **Cliente**.
+
+## 🛒 Pedido de entrega (catálogo reservado)
+Produtos → carrinho → **Finalizar**: (1) nome e telefone → (2) **📍 Sincronizar localização** (GPS, salva no pedido)
++ quadra/lote/observação → (3) **Pix ou Dinheiro** (com troco) → tela com **só o número do pedido**.
+O botão 🧾 do topo mostra o histórico e o andamento em tempo real:
+Recebido → Em preparo → Saiu para entrega → Entregador chegando → Entregue ✓.
+
+**Entregador:** toque no **+**, digite o número → o pedido entra na rota (status "Saiu para entrega") com itens,
+**PAGO / NÃO PAGO**, localização (abre no mapa), WhatsApp do cliente, **Estou chegando** e **Pronto ✓**.
+Ao tocar em Pronto o pedido some da tela dele e fica **Finalizado** para o cliente.
+
+**Pagamento:** o Pix **não** é confirmado automaticamente — quem marca "Pago" é você (ou o login Comanda) no painel
+(aba Comandas → *Marcar como pago*). Não há taxa de entrega nesta versão.
+
 ## ✅ Sobre o painel e as regras
-Com as regras novas, **ninguém consegue gravar** em `produtos`, `categorias`, `config` ou `pedidos` sem estar logado
+Com as regras novas, **ninguém consegue gravar** em `produtos`, `categorias` ou `config` sem estar logado
 como administrador — mesmo conhecendo a URL do projeto. A senha local (`ADMIN_SENHA`) foi removida.
 Se, depois de publicar as regras, o painel mostrar "Sem permissão", confira: (1) as regras foram publicadas,
 (2) o seu documento em `usuarios_autorizados` tem `ativo: true` e `admin: true`.

@@ -189,12 +189,13 @@ function construirModal(){
     try{
       fb = await carregandoModulos;   // se falhou ao carregar, cai no catch
       const cred = await fb.signInWithEmailAndPassword(fb.auth, em, pw);
-      const ok = await fb.usuarioAutorizado(cred.user);
-      if (!ok){
+      const perfil = await fb.perfilDoUsuario(cred.user);
+      if (!perfil || !perfil.ativo){
         await fb.signOut(fb.auth);
         throw { code: "cs/nao-autorizado" };   // mesma mensagem de senha errada
       }
-      window.location.href = DESTINO;           // mantém o overlay até a navegação
+      // cliente/admin → catálogo reservado; entregador → entregas; comanda → comandas
+      window.location.href = fb.paginaInicialDo(perfil);   // mantém o overlay até a navegação
     }catch(err){
       if (!fb) carregandoModulos = null;
       setOcupado(false);

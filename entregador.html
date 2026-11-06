@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#121212">
+<title>Entregas — Distribuidora Campos</title>
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="produtos-secretos.css">
+<link rel="stylesheet" href="entregador.css">
+</head>
+<body>
+
+<!-- Porteiro: nada é exibido até o Firebase confirmar login + tipo "entregador" -->
+<div class="ps-porteiro" id="en-porteiro"><div class="spinner" aria-label="Verificando acesso"></div></div>
+
+<div id="en-app" hidden>
+  <header class="en-topo">
+    <button type="button" class="en-mais" id="en-mais" aria-label="Adicionar pedido à minha rota" title="Adicionar pedido">+</button>
+    <div class="en-titulo">
+      <h1>Minha rota</h1>
+      <small id="en-usuario"></small>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" id="en-sair">Sair</button>
+  </header>
+
+  <main class="en-lista" id="en-lista"></main>
+</div>
+
+<!-- Janela do "+" : digitar o número do pedido -->
+<div class="en-modal-fundo" id="en-modal" hidden>
+  <form class="en-modal" id="en-form" autocomplete="off">
+    <h2>Adicionar pedido</h2>
+    <label for="en-numero">Número do pedido</label>
+    <input type="text" id="en-numero" inputmode="numeric" pattern="[0-9]*" maxlength="9" placeholder="Ex: 12">
+    <p class="en-modal-erro" id="en-modal-erro" role="alert"></p>
+    <div class="en-modal-botoes">
+      <button type="button" class="btn btn-ghost" id="en-cancelar">Cancelar</button>
+      <button type="submit" class="btn btn-gold" id="en-confirmar">Adicionar à rota</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="entregador.js"></script>
+</body>
+</html>

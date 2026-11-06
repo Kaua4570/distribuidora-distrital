@@ -25,7 +25,66 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.get('admin', false) == true;
     }
 
-    // Validação dos dados de produto (usada nas duas telas: inicial e secreta).
+    // Tipo de acesso gravado pelo painel: cliente | entregador | comanda.
+    // (sem tipo = cliente, para logins antigos que já existiam.)
+    function tipoDoUsuario() {
+      return get(/databases/$(database)/documents/usuarios_autorizados/$(request.auth.uid)).data.get('tipo', '');
+    }
+    function cliente() {
+      return autorizado() && (admin() || tipoDoUsuario() in ['cliente', '']);
+    }
+    function entregador() {
+      return autorizado() && tipoDoUsuario() == 'entregador';
+    }
+    function comanda() {
+      return autorizado() && tipoDoUsuario() == 'comanda';
+    }
+    // Quem enxerga e atualiza todos os pedidos
+    function equipe() {
+      return admin() || comanda();
+    }
+
+    // Dados de um login liberado pelo painel (admin só pelo Console).
+    function usuarioValido() {
+      let d = request.resource.data;
+      return d.ativo is bool
+        && d.get('tipo', 'cliente') in ['cliente', 'entregador', 'comanda']
+        && d.get('admin', false) != true
+        && d.get('nome', '') is string && d.get('nome', '').size() <= 80;
+    }
+
+    // Pedido novo feito por um cliente no catálogo reservado.
+    function pedidoNovoValido() {
+      let d = request.resource.data;
+      return d.clienteUid == request.auth.uid
+        && d.cliente is string && d.cliente.size() > 0 && d.cliente.size() <= 80
+        && d.telefone is string && d.telefone.size() >= 8 && d.telefone.size() <= 20
+        && d.endereco is string && d.endereco.size() > 0 && d.endereco.size() <= 400
+        && d.pagamento in ['Pix', 'Dinheiro']
+        && d.get('troco', '') is string && d.get('troco', '').size() <= 30
+        && d.pago == false
+        && d.status == 'Pendente'
+        && d.total is number && d.total >= 0
+        && d.itens is list && d.itens.size() > 0 && d.itens.size() <= 100
+        && (d.get('localizacao', null) == null
+            || (d.localizacao.lat is number && d.localizacao.lng is number))
+        && d.criadoEm == request.time;
+    }
+
+    // O entregador só mexe em: entregadorUid, status e entregueEm — e só em
+    // pedido que ainda não é de outro entregador nem está encerrado.
+    function entregadorAtualizaRota() {
+      let antes = resource.data;
+      let depois = request.resource.data;
+      return entregador()
+        && depois.diff(antes).affectedKeys().hasOnly(['entregadorUid', 'status', 'entregueEm'])
+        && depois.entregadorUid == request.auth.uid
+        && (!('entregadorUid' in antes) || antes.entregadorUid == request.auth.uid)
+        && antes.status != 'Finalizado' && antes.status != 'Cancelado'
+        && depois.status in ['Saiu para Entrega', 'Chegando', 'Finalizado'];
+    }
+
+    // Validação dos dados de produto da tela secreta.
     function produtoValido() {
       let d = request.resource.data;
       return d.nome is string && d.nome.size() > 0 && d.nome.size() <= 120
@@ -76,25 +135,49 @@ service cloud.firestore {
       allow write: if admin();
     }
 
-    // Pedidos: a tela inicial não tem mais carrinho, então ninguém cria pedido
-    // pelo site. O administrador lê e atualiza as comandas no painel.
-    // (Se um dia o carrinho voltar, é aqui que reabre o "create".)
+    // ============================================================
+    // PEDIDOS DE ENTREGA (feitos no catálogo reservado)
+    //  - o código do pedido (ID do documento) vem de um contador sequencial
+    //  - cliente: cria e lê só os próprios pedidos
+    //  - entregador: lê pelo número (get) e entra na própria rota; lista só a rota dele
+    //  - admin / comanda: leem e atualizam tudo; só admin apaga
+    // ============================================================
     match /pedidos/{id} {
-      allow read, create, update, delete: if admin();
+      allow get: if equipe() || entregador()
+                 || (cliente() && resource.data.clienteUid == request.auth.uid);
+      allow list: if equipe()
+                  || (cliente() && resource.data.clienteUid == request.auth.uid)
+                  || (entregador() && resource.data.entregadorUid == request.auth.uid);
+      allow create: if cliente() && pedidoNovoValido();
+      allow update: if equipe() || entregadorAtualizaRota();
+      allow delete: if admin();
+    }
+
+    // Contador do número do pedido: só sobe de 1 em 1.
+    match /contadores/{id} {
+      allow get: if cliente();
+      allow create: if cliente() && id == 'pedidos' && request.resource.data.valor == 1;
+      allow update: if cliente() && id == 'pedidos'
+                    && request.resource.data.valor == resource.data.valor + 1;
     }
 
     // ============================================================
     // TELA SECRETA
     // ============================================================
 
-    // UIDs autorizados.
-    //  - Cada usuário só consegue LER o próprio documento (para o app saber se foi liberado).
-    //  - Ninguém consegue listar, criar, alterar ou apagar pelo app/cliente:
-    //    quem concede acesso é o responsável, direto no Console do Firebase
-    //    (o Console ignora estas regras).
+    // UIDs autorizados (logins liberados).
+    //  - Cada usuário lê o PRÓPRIO documento (o app descobre o tipo de acesso).
+    //  - O admin lista, libera, troca o tipo, bloqueia e remove os outros pelo painel.
+    //  - Ninguém concede "admin" pelo app: isso só pelo Console do Firebase.
+    //  - O admin não altera o próprio documento nem o de outro admin.
     match /usuarios_autorizados/{uid} {
-      allow get: if logado() && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
+      allow get: if logado() && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      allow create: if admin() && uid != request.auth.uid && usuarioValido();
+      allow update: if admin() && uid != request.auth.uid
+                    && resource.data.get('admin', false) != true && usuarioValido();
+      allow delete: if admin() && uid != request.auth.uid
+                    && resource.data.get('admin', false) != true;
     }
 
     // Produtos secretos:

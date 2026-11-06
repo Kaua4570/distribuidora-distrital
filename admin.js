@@ -3,9 +3,11 @@
 // ============================================================
 import { db, COL_PRODUTOS, COL_CATEGORIAS, COL_PEDIDOS } from "./firebase-config.js";
 import {
-  auth, onAuthStateChanged, signOut,
+  auth, onAuthStateChanged, signOut, paginaInicialDo,
   COL_USUARIOS_AUTORIZADOS, COL_PRODUTOS_SECRETOS, COL_CATEGORIAS_SECRETAS
 } from "./secreto-firebase.js";
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, setDoc, getDoc,
   onSnapshot, query, orderBy, serverTimestamp
@@ -110,10 +112,25 @@ async function sairDaConta(){
   irPara(PAGINA_INICIAL);
 }
 
-function entrarNoPainel(){
+// Quem entra: administrador (tudo) ou login do tipo "comanda" (só as comandas).
+function perfilDoPainel(d){
+  if (!d || d.ativo !== true) return null;
+  if (d.admin === true) return "admin";
+  if (d.tipo === "comanda") return "comanda";
+  return null;
+}
+
+function entrarNoPainel(perfil){
   painelAberto = true;
   telaLogin.style.display = "none";
   appAdmin.style.display = "block";
+  if (perfil === "comanda"){
+    // login "comanda": só a aba de comandas (o resto nem existe na tela)
+    document.querySelectorAll(".so-admin").forEach(el => el.remove());
+    document.querySelector('.admin-tab[data-aba="comandas"]').click();
+    listenPedidos();
+    return;
+  }
   atualizarBarraModo();
   iniciarListeners();
 }
@@ -123,26 +140,29 @@ onAuthStateChanged(auth, async (user) => {
   if (verificando || painelAberto) return;
   verificando = true;
 
-  let ok = false, autorizadoSemAdmin = false;
+  let perfil = null, dados = null;
   try{
     const snap = await getDoc(doc(db, COL_USUARIOS_AUTORIZADOS, user.uid));
-    const d = snap.exists() ? snap.data() : null;
-    ok = !!d && d.ativo === true && d.admin === true;
-    autorizadoSemAdmin = !!d && d.ativo === true && !ok;
-  }catch(_){ ok = false; }
+    dados = snap.exists() ? snap.data() : null;
+    perfil = perfilDoPainel(dados);
+  }catch(_){ perfil = null; }
 
-  if (!ok){ irPara(autorizadoSemAdmin ? PAGINA_SECRETA : PAGINA_INICIAL); return; }
+  if (!perfil){
+    // autorizado mas sem acesso ao painel (cliente/entregador) vai para a tela dele
+    const destino = dados && dados.ativo === true
+      ? paginaInicialDo({ tipo: dados.tipo || "cliente" })
+      : PAGINA_INICIAL;
+    irPara(destino);
+    return;
+  }
 
-  // Se o admin for removido/desativado com o painel aberto, sai na hora.
+  // Se o acesso for removido/bloqueado/alterado com o painel aberto, sai na hora.
   cancelarAutorizacao = onSnapshot(
     doc(db, COL_USUARIOS_AUTORIZADOS, user.uid),
-    (s) => {
-      const d = s.exists() ? s.data() : null;
-      if (!d || d.ativo !== true || d.admin !== true) irPara(PAGINA_SECRETA);
-    },
+    (s) => { if (perfilDoPainel(s.exists() ? s.data() : null) !== perfil) irPara(PAGINA_SECRETA); },
     () => irPara(PAGINA_INICIAL)
   );
-  entrarNoPainel();
+  entrarNoPainel(perfil);
 });
 
 document.getElementById("btn-sair").addEventListener("click", sairDaConta);
@@ -205,6 +225,7 @@ function iniciarListeners(){
   listenProdutos();
   listenPedidos();
   listenConfigLoja();
+  listenUsuarios();
 }
 
 // ============================================================
@@ -653,7 +674,17 @@ function tocarBeep(){
   } catch(e){ /* navegador pode bloquear áudio sem interação prévia */ }
 }
 
-const ORDEM_STATUS = ["Pendente", "Em Preparo", "Saiu para Entrega", "Finalizado", "Cancelado"];
+const ORDEM_STATUS = ["Pendente", "Em Preparo", "Saiu para Entrega", "Chegando", "Finalizado", "Cancelado"];
+
+function linkWhatsApp(tel){
+  const d = String(tel || "").replace(/\D/g, "");
+  if (d.length < 8) return "";
+  return `https://wa.me/${d.startsWith("55") && d.length >= 12 ? d : "55" + d}`;
+}
+function linkMapa(loc){
+  if (!loc || typeof loc.lat !== "number" || typeof loc.lng !== "number") return "";
+  return `https://www.google.com/maps/search/?api=1&query=${loc.lat},${loc.lng}`;
+}
 
 function listenPedidos(){
   onSnapshot(query(collection(db, COL_PEDIDOS), orderBy("criadoEm", "desc")), (snap) => {
@@ -667,7 +698,7 @@ function listenPedidos(){
     pedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     renderPedidos();
     primeiraCargaPedidos = false;
-  }, (err) => console.error("Erro pedidos:", err));
+  }, (err) => { console.error("Erro pedidos:", err); avisarErroLeitura(err); });
 }
 
 function renderPedidos(){
@@ -681,27 +712,35 @@ function renderPedidos(){
     const hora = p.criadoEm?.toDate ? p.criadoEm.toDate().toLocaleString("pt-BR") : "agora";
     const statusClasse = "status-" + (p.status || "Pendente").toLowerCase().replace(/\s+/g,"-").replace("saiu-para-entrega","entrega").replace("em-preparo","preparo");
     const itensHtml = (p.itens || []).map(it =>
-      `<div class="comanda-item-linha"><span>${it.qtd}x ${it.nome}</span><span>${formatarReal(it.preco * it.qtd)}</span></div>`
+      `<div class="comanda-item-linha"><span>${esc(it.qtd)}x ${esc(it.nome)}</span><span>${formatarReal((Number(it.preco) || 0) * (Number(it.qtd) || 0))}</span></div>`
     ).join("");
+    const mapa = linkMapa(p.localizacao);
+    const zap = linkWhatsApp(p.telefone);
+    const pago = p.pago === true;
 
     return `
-      <div class="comanda ${statusClasse}" data-id="${p.id}">
+      <div class="comanda ${statusClasse}" data-id="${esc(p.id)}">
         <div class="comanda-topo">
           <div>
-            <div class="comanda-cliente">${p.cliente || "Cliente"}</div>
-            <div class="comanda-hora">${hora}</div>
+            <div class="comanda-cliente">#${esc(p.id)} · ${esc(p.cliente || "Cliente")}</div>
+            <div class="comanda-hora">${esc(hora)}</div>
           </div>
         </div>
-        <div class="comanda-info-linha">📍 ${p.endereco || "-"}</div>
-        <div class="comanda-info-linha">💳 ${p.pagamento || "-"}${p.troco ? ` (troco p/ ${p.troco})` : ""}</div>
+        ${p.telefone ? `<div class="comanda-info-linha">📞 ${zap ? `<a class="comanda-link" href="${esc(zap)}" target="_blank" rel="noopener">${esc(p.telefone)}</a>` : esc(p.telefone)}</div>` : ""}
+        <div class="comanda-info-linha">📍 ${esc(p.endereco || "-")}${mapa ? ` · <a class="comanda-link" href="${esc(mapa)}" target="_blank" rel="noopener">abrir no mapa</a>` : ""}</div>
+        <div class="comanda-info-linha">💳 ${esc(p.pagamento || "-")}${p.troco ? ` (troco p/ ${esc(p.troco)})` : ""} · ${pago ? "PAGO ✓" : "não pago"}</div>
+        ${p.entregadorUid ? `<div class="comanda-info-linha">🛵 Na rota de um entregador</div>` : ""}
         <div class="comanda-itens">${itensHtml}</div>
         <div class="comanda-total"><span>Total</span><span>${formatarReal(p.total)}</span></div>
-        ${p.observacoes ? `<div class="comanda-obs">Obs: ${p.observacoes}</div>` : ""}
+        ${p.observacoes ? `<div class="comanda-obs">Obs: ${esc(p.observacoes)}</div>` : ""}
         <div class="comanda-acoes">
-          <select data-status-id="${p.id}">
+          <select data-status-id="${esc(p.id)}">
             ${ORDEM_STATUS.map(s => `<option value="${s}" ${p.status === s ? "selected" : ""}>${s}</option>`).join("")}
           </select>
         </div>
+        <button type="button" class="btn btn-sm ${pago ? "btn-ghost" : "btn-gold"} comanda-pago" data-pago-id="${esc(p.id)}" data-pago="${pago ? "1" : "0"}">
+          ${pago ? "Pago ✓ (desfazer)" : "Marcar como pago"}
+        </button>
       </div>`;
   }).join("");
 
@@ -715,7 +754,115 @@ function renderPedidos(){
       }
     });
   });
+  grid.querySelectorAll("[data-pago-id]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      try{
+        await updateDoc(doc(db, COL_PEDIDOS, btn.dataset.pagoId), { pago: btn.dataset.pago !== "1" });
+      } catch(err){
+        console.error(err);
+        mostrarToast("Erro ao atualizar o pagamento.", true);
+      }
+    });
+  });
 }
+
+// ============================================================
+// LOGINS LIBERADOS (usuarios_autorizados)
+// O usuário é criado no Firebase (Authentication); aqui você cola o UID
+// e escolhe o tipo: cliente, entregador ou comanda. "admin" só pelo Console.
+// ============================================================
+const TIPOS_LOGIN = { cliente: "Cliente", entregador: "Entregador", comanda: "Comanda" };
+let usuarios = [];
+
+function listenUsuarios(){
+  onSnapshot(collection(db, COL_USUARIOS_AUTORIZADOS), (snap) => {
+    usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderUsuarios();
+  }, (err) => { console.error("Erro logins:", err); avisarErroLeitura(err); });
+}
+
+function renderUsuarios(){
+  const el = document.getElementById("lista-usuarios");
+  document.getElementById("usuarios-vazio").style.display = usuarios.length ? "none" : "block";
+  const ordenados = [...usuarios].sort((a, b) =>
+    (b.admin === true) - (a.admin === true) || String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR"));
+
+  el.innerHTML = ordenados.map(u => {
+    const ehAdmin = u.admin === true;
+    const ativo = u.ativo === true;
+    const tipo = u.tipo || "cliente";
+    return `
+      <div class="usuario-linha ${ativo ? "" : "bloqueado"}" data-uid="${esc(u.id)}">
+        <div class="usuario-nome">${esc(u.nome || "(sem nome)")}
+          ${ehAdmin ? `<span class="badge badge-categoria">Administrador</span>` : `<span class="badge badge-categoria">${esc(TIPOS_LOGIN[tipo] || tipo)}</span>`}
+          ${ativo ? "" : `<span class="badge badge-esgotado">Bloqueado</span>`}
+        </div>
+        <div class="usuario-uid">${esc(u.id)}</div>
+        ${ehAdmin ? "" : `
+          <div class="usuario-acoes">
+            <select data-uacao="tipo" aria-label="Tipo de acesso">
+              ${Object.entries(TIPOS_LOGIN).map(([v, r]) => `<option value="${v}" ${v === tipo ? "selected" : ""}>${r}</option>`).join("")}
+            </select>
+            <button type="button" class="btn btn-sm ${ativo ? "btn-outline" : "btn-gold"}" data-uacao="ativo">${ativo ? "Bloquear" : "Reativar"}</button>
+            <button type="button" class="btn btn-sm btn-ghost" data-uacao="remover">Remover</button>
+          </div>`}
+      </div>`;
+  }).join("");
+}
+
+function erroUsuario(err, padrao){
+  console.error(err);
+  mostrarToast(err && err.code === "permission-denied"
+    ? "Sem permissão (administradores só se alteram pelo Console, e você não altera o próprio login)."
+    : padrao, true);
+}
+
+document.getElementById("lista-usuarios").addEventListener("change", async (e) => {
+  const sel = e.target.closest('[data-uacao="tipo"]');
+  const linha = e.target.closest(".usuario-linha");
+  if (!sel || !linha) return;
+  try{
+    await updateDoc(doc(db, COL_USUARIOS_AUTORIZADOS, linha.dataset.uid), { tipo: sel.value });
+    mostrarToast("Tipo de acesso atualizado.");
+  }catch(err){ erroUsuario(err, "Erro ao alterar o tipo."); renderUsuarios(); }
+});
+
+document.getElementById("lista-usuarios").addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-uacao]");
+  const linha = e.target.closest(".usuario-linha");
+  if (!b || !linha) return;
+  const uid = linha.dataset.uid;
+  const u = usuarios.find(x => x.id === uid);
+  if (!u) return;
+  try{
+    if (b.dataset.uacao === "ativo"){
+      await updateDoc(doc(db, COL_USUARIOS_AUTORIZADOS, uid), { ativo: u.ativo !== true });
+      mostrarToast(u.ativo === true ? "Login bloqueado." : "Login reativado.");
+    } else if (b.dataset.uacao === "remover"){
+      if (!confirm(`Remover o acesso de "${u.nome || uid}"?\n(O usuário continua existindo no Firebase, mas perde o acesso.)`)) return;
+      await deleteDoc(doc(db, COL_USUARIOS_AUTORIZADOS, uid));
+      mostrarToast("Acesso removido.");
+    }
+  }catch(err){ erroUsuario(err, "Erro ao atualizar o login."); }
+});
+
+document.getElementById("form-usuario").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const uid = document.getElementById("usuario-uid").value.trim();
+  const nome = document.getElementById("usuario-nome").value.trim();
+  const tipo = document.getElementById("usuario-tipo").value;
+  if (!/^[A-Za-z0-9]{20,40}$/.test(uid)){
+    mostrarToast("UID inválido. Copie o User UID inteiro, na tela Authentication → Users.", true);
+    return;
+  }
+  const existente = usuarios.find(u => u.id === uid);
+  if (existente && !confirm(`Esse UID já está liberado como ${TIPOS_LOGIN[existente.tipo || "cliente"] || existente.tipo}. Substituir?`)) return;
+  try{
+    await setDoc(doc(db, COL_USUARIOS_AUTORIZADOS, uid), { ativo: true, tipo, nome, criadoEm: serverTimestamp() });
+    document.getElementById("form-usuario").reset();
+    mostrarToast(`Acesso liberado como ${TIPOS_LOGIN[tipo]}.`);
+  }catch(err){ erroUsuario(err, "Erro ao liberar o acesso."); }
+});
 
 // ============================================================
 // CONFIGURAÇÕES DA LOJA

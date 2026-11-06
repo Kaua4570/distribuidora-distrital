@@ -30,7 +30,7 @@
   </header>
 
   <!-- Alterna entre editar a Tela inicial (pública) e a Tela secreta — mesma ferramenta -->
-  <div class="modo-barra">
+  <div class="modo-barra so-admin">
     <div class="modo-botoes" role="group" aria-label="Qual tela editar">
       <button type="button" class="modo-btn" data-modo="inicial">🏠 Tela inicial</button>
       <button type="button" class="modo-btn" data-modo="secreta">🔒 Tela secreta</button>
@@ -40,15 +40,16 @@
   </div>
 
   <nav class="admin-tabs">
-    <button class="admin-tab ativa" data-aba="produtos">📦 Produtos</button>
+    <button class="admin-tab ativa so-admin" data-aba="produtos">📦 Produtos</button>
     <button class="admin-tab" data-aba="comandas">🧾 Comandas <span id="badge-pendentes"></span></button>
-    <button class="admin-tab" data-aba="config">⚙️ Configurações</button>
+    <button class="admin-tab so-admin" data-aba="usuarios">👥 Logins</button>
+    <button class="admin-tab so-admin" data-aba="config">⚙️ Configurações</button>
   </nav>
 
   <main class="admin-corpo">
 
     <!-- ===================== ABA PRODUTOS ===================== -->
-    <section class="admin-aba ativa" id="aba-produtos">
+    <section class="admin-aba ativa so-admin" id="aba-produtos">
 
       <div class="painel">
         <h2 id="titulo-form-produto">Novo produto</h2>
@@ -118,7 +119,43 @@
     </section>
 
     <!-- ===================== ABA CONFIGURAÇÕES ===================== -->
-    <section class="admin-aba" id="aba-config">
+    <!-- ===================== ABA LOGINS ===================== -->
+    <section class="admin-aba so-admin" id="aba-usuarios">
+      <div class="painel">
+        <h2>Liberar novo login</h2>
+        <p class="usuario-ajuda">
+          1) No Firebase, vá em <strong>Authentication → Users → Add user</strong> e crie o e-mail e a senha.<br>
+          2) Copie o <strong>User UID</strong> dessa pessoa e cole abaixo.<br>
+          3) Escolha o tipo de acesso e toque em <strong>Liberar acesso</strong>.
+        </p>
+        <form id="form-usuario">
+          <div class="campo">
+            <label for="usuario-uid">UID do usuário*</label>
+            <input type="text" id="usuario-uid" placeholder="Cole aqui o User UID" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+          </div>
+          <div class="campo">
+            <label for="usuario-nome">Nome (só para você identificar)</label>
+            <input type="text" id="usuario-nome" maxlength="80" placeholder="Ex: João entregador">
+          </div>
+          <div class="campo">
+            <label for="usuario-tipo">Tipo de acesso*</label>
+            <select id="usuario-tipo">
+              <option value="cliente">Cliente — faz pedidos no catálogo reservado</option>
+              <option value="entregador">Entregador — tela de entregas</option>
+              <option value="comanda">Comanda — só vê e atualiza os pedidos</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-gold btn-block">Liberar acesso</button>
+        </form>
+      </div>
+      <div class="painel">
+        <h2>Logins liberados</h2>
+        <div id="usuarios-vazio" class="lista-vazia" style="display:none">Nenhum login liberado ainda.</div>
+        <div id="lista-usuarios"></div>
+      </div>
+    </section>
+
+    <section class="admin-aba so-admin" id="aba-config">
 
       <div class="painel">
         <h2>Loja</h2>
