@@ -1,4 +1,4 @@
-# Distribuidora Campos — Cardápio Digital
+# Distribuidora Distrital — Cardápio Digital
 
 Cardápio digital (`index.html`) + Painel do Dono (`admin.html`), com Firebase
 como banco de dados/armazenamento de fotos.
@@ -6,11 +6,12 @@ como banco de dados/armazenamento de fotos.
 ## Arquivos
 - `index.html` + `app.js` — tela inicial (vitrine pública: produtos, busca e categorias; **sem carrinho**)
 - `entregador.html` + `entregador.js/.css` — tela do entregador (botão "+" e a rota dele)
+- `pix-criar.js`, `mp-webhook.js`, `servidor.js`, `package.json`, `vercel.json` — funções da Vercel do **Pix automático** (Mercado Pago)
 - `admin.html` + `admin.js` — painel do dono (produtos, comandas, configurações, importação de backup).
   **Só abre pela engrenagem ⚙️ da área secreta** (login Firebase + `admin: true`); alterna entre **Tela inicial** e **Tela secreta**
 - `style.css` — visual (tema dark + dourado), usado pelos dois
 - `firebase-config.js` — já preenchido com as chaves do projeto `lanchonete-a98dc`
-- `logo.png` — logo da Distribuidora Campos (coloque este arquivo na pasta)
+- `logo.png` — logo da Distribuidora Distrital (coloque este arquivo na pasta)
 
 ## Passo 1 — Regras do Firestore
 Cole o conteúdo de `firestore.rules` em **Firestore Database → Regras → Publicar**.
@@ -18,7 +19,7 @@ O arquivo cobre tudo: tela inicial, tela secreta e painel. Resumo:
 - `produtos`, `categorias`, `config`: **leitura pública**, gravação **só admin**.
 - `pedidos`: cliente cria e lê só os dele; entregador entra na própria rota; admin e "comanda" veem e atualizam tudo.
 - `usuarios_autorizados`: admin libera/bloqueia/remove logins pelo painel (nunca concede `admin`, isso é só pelo Console).
-- `contadores`: número sequencial do pedido (1, 2, 3...).
+- Número do pedido: 4 dígitos **aleatórios** (o ID do documento em `pedidos`).
 - `produtos_secretos`, `categorias_secretas`: leitura para usuários autorizados, gravação só admin.
 
 Este projeto **não usa Firebase Storage** — roda 100% no plano gratuito (Spark).
@@ -167,7 +168,9 @@ Logins antigos sem `tipo` continuam funcionando como **Cliente**.
 
 ## 🛒 Pedido de entrega (catálogo reservado)
 Produtos → carrinho → **Finalizar**: (1) nome e telefone → (2) **📍 Sincronizar localização** (GPS, salva no pedido)
-+ quadra/lote/observação → (3) **Pix ou Dinheiro** (com troco) → tela com **só o número do pedido**.
++ quadra/lote/observação → (3) **Pix ou Dinheiro** (com troco) → número do pedido.
+O número do pedido tem **4 dígitos aleatórios** (de 1000 a 9999, ex.: 4839), sem sequência.
+São 9.000 números possíveis: se um dia acumular milhares de pedidos, apague os mais antigos no Firestore para liberar números.
 O botão 🧾 do topo mostra o histórico e o andamento em tempo real:
 Recebido → Em preparo → Saiu para entrega → Entregador chegando → Entregue ✓.
 
@@ -175,8 +178,36 @@ Recebido → Em preparo → Saiu para entrega → Entregador chegando → Entreg
 **PAGO / NÃO PAGO**, localização (abre no mapa), WhatsApp do cliente, **Estou chegando** e **Pronto ✓**.
 Ao tocar em Pronto o pedido some da tela dele e fica **Finalizado** para o cliente.
 
-**Pagamento:** o Pix **não** é confirmado automaticamente — quem marca "Pago" é você (ou o login Comanda) no painel
-(aba Comandas → *Marcar como pago*). Não há taxa de entrega nesta versão.
+**Dinheiro:** quem marca "pago" é você (ou o login Comanda) na aba Comandas → *Marcar como pago*.
+Não há taxa de entrega nesta versão.
+
+## 💳 Pix automático (Mercado Pago + Vercel)
+Ao escolher **Pix**, o cliente vê o **QR Code e o código copia-e-cola** logo depois de finalizar. Quando ele paga, o
+Mercado Pago avisa a função `/api/mp-webhook`, que marca o pedido como **PAGO** — a tela do cliente, a do entregador
+e o painel atualizam sozinhos. Para um Pix ainda não pago, o botão **Pagar com Pix** fica em *Meus pedidos*
+(o mesmo QR é reaproveitado por 1 hora; depois gera outro).
+
+**Como funciona (segurança):** o valor da cobrança vem do pedido gravado no Firestore (nunca do celular); só o dono
+do pedido gera o Pix; e o aviso do Mercado Pago **não é confiado** — a função consulta o pagamento na API do Mercado Pago
+e só marca como pago se estiver *aprovado*, for Pix, com o número do pedido e o valor idênticos.
+
+**Configurar (uma vez):**
+1. Suba **todos os arquivos** (todos na mesma pasta, sem subpastas — inclui `pix-criar.js`, `mp-webhook.js`, `servidor.js`, `package.json` e `vercel.json`) para o GitHub ligado à Vercel e espere o deploy. O `vercel.json` é quem faz os endereços `/api/pix-criar` e `/api/mp-webhook` funcionarem a partir desses arquivos.
+2. **Firebase → ⚙️ Configurações do projeto → Contas de serviço → Gerar nova chave privada.** Abre um arquivo `.json`: copie **todo** o conteúdo.
+3. **Vercel → seu projeto → Settings → Environment Variables** e crie:
+   - `FIREBASE_SERVICE_ACCOUNT` = o conteúdo do arquivo `.json`
+   - `MP_ACCESS_TOKEN` = Access Token da sua aplicação no Mercado Pago (`TEST-...` para testar, o de **produção** para valer)
+   - `ALLOWED_ORIGINS` = `https://kaua4570.github.io,https://distribuidora-campos.vercel.app` (os endereços de onde o site abre, separados por vírgula, sem barra no final)
+   - `MP_SELLER_EMAIL` (opcional) = e-mail da conta do Mercado Pago
+   Depois **Deployments → ⋯ → Redeploy**.
+4. Em `firebase-config.js`, confira `API_URL` (endereço do seu projeto na Vercel, ex.: `https://distribuidora-campos.vercel.app`).
+   Com `API_URL = ""` o Pix automático fica desligado e a loja confirma o Pix manualmente.
+5. *(Reforço, opcional)* Mercado Pago → Suas integrações → sua aplicação → **Webhooks** → URL
+   `https://distribuidora-campos.vercel.app/api/mp-webhook`, evento **Pagamentos**. A função já informa essa URL em cada Pix.
+6. Teste com um pedido de valor baixo: pague o QR e veja "Pagamento confirmado ✓".
+
+**Se der "Não foi possível gerar o Pix":** Vercel → seu projeto → **Logs** mostra o motivo (variável faltando, token do
+Mercado Pago inválido, endereço fora do `ALLOWED_ORIGINS`...).
 
 ## ✅ Sobre o painel e as regras
 Com as regras novas, **ninguém consegue gravar** em `produtos`, `categorias` ou `config` sem estar logado

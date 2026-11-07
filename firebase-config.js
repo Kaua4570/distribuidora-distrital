@@ -1,5 +1,5 @@
 // ============================================================
-// CONFIGURAÇÃO — DISTRIBUIDORA CAMPOS
+// CONFIGURAÇÃO — DISTRIBUIDORA DISTRITAL
 // ============================================================
 // Importado por app.js e admin.js. Não usa Firebase Storage:
 // as fotos são salvas em Base64 (comprimidas) no Firestore.
@@ -29,3 +29,8 @@ export const COL_PRODUTOS = "produtos";
 export const COL_CATEGORIAS = "categorias";
 export const COL_PEDIDOS = "pedidos";
 export const DOC_CONFIG_LOJA = "config/loja";
+
+// Endereço das funções da Vercel (Pix do Mercado Pago): pasta /api deste projeto.
+// Troque se o seu endereço da Vercel for outro. Deixe "" para desligar o Pix automático
+// (aí a loja confirma o pagamento manualmente no painel).
+export const API_URL = "https://distribuidora-campos.vercel.app";

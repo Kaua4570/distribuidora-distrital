@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — admin.js (painel do dono)
+// DISTRIBUIDORA DISTRITAL — admin.js (painel do dono)
 // ============================================================
 import { db, COL_PRODUTOS, COL_CATEGORIAS, COL_PEDIDOS } from "./firebase-config.js";
 import {
@@ -27,7 +27,7 @@ const MODOS = {
   inicial: { rotulo: "Tela inicial", descricao: "cardápio público",    produtos: COL_PRODUTOS,         categorias: COL_CATEGORIAS },
   secreta: { rotulo: "Tela secreta", descricao: "catálogo reservado",  produtos: COL_PRODUTOS_SECRETOS, categorias: COL_CATEGORIAS_SECRETAS }
 };
-const CHAVE_MODO = "distcampos_modo";
+const CHAVE_MODO = "distrital_modo";
 function modoInicial(){
   const url = new URLSearchParams(location.search).get("modo");
   if (url && MODOS[url]) return url;
@@ -728,7 +728,7 @@ function renderPedidos(){
         </div>
         ${p.telefone ? `<div class="comanda-info-linha">📞 ${zap ? `<a class="comanda-link" href="${esc(zap)}" target="_blank" rel="noopener">${esc(p.telefone)}</a>` : esc(p.telefone)}</div>` : ""}
         <div class="comanda-info-linha">📍 ${esc(p.endereco || "-")}${mapa ? ` · <a class="comanda-link" href="${esc(mapa)}" target="_blank" rel="noopener">abrir no mapa</a>` : ""}</div>
-        <div class="comanda-info-linha">💳 ${esc(p.pagamento || "-")}${p.troco ? ` (troco p/ ${esc(p.troco)})` : ""} · ${pago ? "PAGO ✓" : "não pago"}</div>
+        <div class="comanda-info-linha">💳 ${esc(p.pagamento || "-")}${p.troco ? ` (troco p/ ${esc(p.troco)})` : ""} · ${pago ? "PAGO ✓" : "não pago"}${p.mpPagamentoId ? " (confirmado pelo Mercado Pago)" : ""}</div>
         ${p.entregadorUid ? `<div class="comanda-info-linha">🛵 Na rota de um entregador</div>` : ""}
         <div class="comanda-itens">${itensHtml}</div>
         <div class="comanda-total"><span>Total</span><span>${formatarReal(p.total)}</span></div>

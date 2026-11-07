@@ -1,0 +1,10 @@
+{
+  "name": "distribuidora-distrital",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cardápio digital da Distribuidora Distrital (site estático + funções da Vercel para o Pix do Mercado Pago)",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

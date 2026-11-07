@@ -1,7 +1,7 @@
 // Teste das regras do Firestore com o emulador oficial.
 // NÃO foi executado no ambiente de desenvolvimento (sem acesso à rede) — rode na sua máquina:
 //   npm i -D @firebase/rules-unit-testing firebase
-//   npx firebase emulators:exec --only firestore --project demo-campos "node --test firestore.rules.test.mjs"
+//   npx firebase emulators:exec --only firestore --project demo-distrital "node --test firestore.rules.test.mjs"
 import { initializeTestEnvironment, assertFails, assertSucceeds } from "@firebase/rules-unit-testing";
 import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, query, where, serverTimestamp, writeBatch } from "firebase/firestore";
 import { readFileSync } from "node:fs";
@@ -10,7 +10,7 @@ import { test, before, after } from "node:test";
 let env;
 before(async () => {
   env = await initializeTestEnvironment({
-    projectId: "demo-campos",
+    projectId: "demo-distrital",
     firestore: { rules: readFileSync(new URL("./firestore.rules", import.meta.url), "utf8"), host: "127.0.0.1", port: 8080 }
   });
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -120,23 +120,26 @@ const pedidoOk = (uid) => ({
   localizacao: { lat: -15.8, lng: -47.9, precisao: 20 }, pagamento: "Pix", troco: "", pago: false,
   status: "Pendente", total: 25.5, itens: [{ produtoId: "p1", nome: "X", preco: 25.5, qtd: 1 }], criadoEm: serverTimestamp()
 });
-test("pedido: cliente cria com contador sequencial; os outros não", async () => {
-  const db = user("CLI");
-  const b = writeBatch(db);
-  b.set(doc(db, "contadores/pedidos"), { valor: 1 });
-  b.set(doc(db, "pedidos/1"), pedidoOk("CLI"));
-  await assertSucceeds(b.commit());
-  await assertFails(setDoc(doc(user("CLI"), "contadores/pedidos"), { valor: 5 }));          // não pula número
-  await assertSucceeds(setDoc(doc(user("CLI"), "contadores/pedidos"), { valor: 2 }));
-  await assertFails(setDoc(doc(anon(), "pedidos/9"), pedidoOk("X")));
-  await assertFails(setDoc(doc(user("ENT"), "pedidos/9"), pedidoOk("ENT")));
-  await assertFails(setDoc(doc(user("COM"), "pedidos/9"), pedidoOk("COM")));
-  await assertFails(setDoc(doc(user("CLI"), "pedidos/9"), pedidoOk("CLI2")));                // em nome de outro
-  await assertFails(setDoc(doc(user("CLI"), "pedidos/9"), { ...pedidoOk("CLI"), pago: true }));
-  await assertFails(setDoc(doc(user("CLI"), "pedidos/9"), { ...pedidoOk("CLI"), status: "Finalizado" }));
-  await assertFails(setDoc(doc(user("CLI"), "pedidos/9"), { ...pedidoOk("CLI"), itens: [] }));
-  await assertFails(setDoc(doc(user("CLI"), "pedidos/9"), { ...pedidoOk("CLI"), pagamento: "Cartão" }));
-  await assertSucceeds(setDoc(doc(user("ADM"), "pedidos/10"), { ...pedidoOk("ADM") }));      // admin também pode pedir
+test("pedido: cliente cria com número aleatório de 4 dígitos; os outros não", async () => {
+  await assertSucceeds(setDoc(doc(user("CLI"), "pedidos/4839"), pedidoOk("CLI")));
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/12"), pedidoOk("CLI")));                 // id fora do padrão (2 dígitos)
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/abc123"), pedidoOk("CLI")));
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/483920"), pedidoOk("CLI")));              // 6 dígitos não vale mais
+  await assertFails(setDoc(doc(anon(), "pedidos/1100"), pedidoOk("X")));
+  await assertFails(setDoc(doc(user("ENT"), "pedidos/1101"), pedidoOk("ENT")));
+  await assertFails(setDoc(doc(user("COM"), "pedidos/1102"), pedidoOk("COM")));
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/1103"), pedidoOk("CLI2")));            // em nome de outro
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/1104"), { ...pedidoOk("CLI"), pago: true }));   // cliente não se marca como pago
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/1105"), { ...pedidoOk("CLI"), status: "Finalizado" }));
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/1106"), { ...pedidoOk("CLI"), itens: [] }));
+  await assertFails(setDoc(doc(user("CLI"), "pedidos/1107"), { ...pedidoOk("CLI"), pagamento: "Cartão" }));
+  await assertSucceeds(setDoc(doc(user("ADM"), "pedidos/2222"), pedidoOk("ADM")));         // admin também pode pedir
+});
+test("pedido: colisão de número não sobrescreve pedido de ninguém (nem do admin)", async () => {
+  await assertFails(setDoc(doc(user("CLI2"), "pedidos/4839"), pedidoOk("CLI2")));           // já existe (do CLI)
+  await assertFails(setDoc(doc(user("ADM"), "pedidos/4839"), pedidoOk("ADM")));             // admin também não sobrescreve
+  const dono = await getDoc(doc(user("CLI"), "pedidos/4839"));
+  if (dono.data().clienteUid !== "CLI") throw new Error("pedido foi sobrescrito");
 });
 test("pedido: cliente só enxerga os próprios", async () => {
   await assertSucceeds(getDoc(doc(user("CLI"), "pedidos/5")));

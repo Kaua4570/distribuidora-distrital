@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — app.js (tela inicial / cardápio público)
+// DISTRIBUIDORA DISTRITAL — app.js (tela inicial / cardápio público)
 // Só vitrine: lista os produtos, busca e categorias.
 // Não há carrinho nem pedido por aqui. Produtos e categorias são
 // cadastrados no painel (engrenagem da área secreta → Tela inicial).

@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — entregador.js
+// DISTRIBUIDORA DISTRITAL — entregador.js
 // Tela do entregador: um "+" no topo; digita o número do pedido e ele entra
 // na rota. Cada pedido mostra itens, se está pago, localização, WhatsApp e
 // o botão "Pronto" (o pedido sai da tela e fica Finalizado para o cliente).
@@ -35,6 +35,8 @@ let encerrado = false;
 
 // ---------------- Utilitários ----------------
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+// criadoEm é nulo logo após gravar; os números dos pedidos agora são aleatórios (não servem para ordenar)
+const tempoDe = (p) => (p.criadoEm && p.criadoEm.toMillis) ? p.criadoEm.toMillis() : Date.now();
 const real = (v) => (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 function toast(msg, erro = false){
@@ -105,7 +107,7 @@ onAuthStateChanged(auth, async (user) => {
     (snap) => {
       rota = snap.docs.map(d => ({ id: d.id, ...d.data() }))
         .filter(p => p.status !== "Finalizado" && p.status !== "Cancelado")
-        .sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0));
+        .sort((a, b) => tempoDe(a) - tempoDe(b));
       render();
     },
     (err) => {

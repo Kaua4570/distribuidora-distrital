@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "pix-criar.js", "use": "@vercel/node" },
+    { "src": "mp-webhook.js", "use": "@vercel/node" },
+    { "src": "*.html", "use": "@vercel/static" },
+    { "src": "*.css", "use": "@vercel/static" },
+    { "src": "*.png", "use": "@vercel/static" },
+    { "src": "admin.js", "use": "@vercel/static" },
+    { "src": "app.js", "use": "@vercel/static" },
+    { "src": "acesso-secreto.js", "use": "@vercel/static" },
+    { "src": "entregador.js", "use": "@vercel/static" },
+    { "src": "firebase-config.js", "use": "@vercel/static" },
+    { "src": "produtos-secretos.js", "use": "@vercel/static" },
+    { "src": "secreto-firebase.js", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/pix-criar", "dest": "/pix-criar.js" },
+    { "src": "/api/mp-webhook", "dest": "/mp-webhook.js" },
+    { "handle": "filesystem" }
+  ]
+}

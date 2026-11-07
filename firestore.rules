@@ -137,7 +137,7 @@ service cloud.firestore {
 
     // ============================================================
     // PEDIDOS DE ENTREGA (feitos no catálogo reservado)
-    //  - o código do pedido (ID do documento) vem de um contador sequencial
+    //  - o número do pedido (ID do documento) tem 4 dígitos ALEATÓRIOS, sorteados pelo app
     //  - cliente: cria e lê só os próprios pedidos
     //  - entregador: lê pelo número (get) e entra na própria rota; lista só a rota dele
     //  - admin / comanda: leem e atualizam tudo; só admin apaga
@@ -148,17 +148,14 @@ service cloud.firestore {
       allow list: if equipe()
                   || (cliente() && resource.data.clienteUid == request.auth.uid)
                   || (entregador() && resource.data.entregadorUid == request.auth.uid);
-      allow create: if cliente() && pedidoNovoValido();
-      allow update: if equipe() || entregadorAtualizaRota();
+      // id de 4 dígitos; se o número sorteado já existir, a gravação vira "update" e é negada
+      allow create: if cliente() && id.matches('^[0-9]{4}$') && pedidoNovoValido();
+      // admin/comanda mudam status, pagamento etc., mas nunca recriam/sobrescrevem um pedido
+      allow update: if (equipe()
+                        && request.resource.data.get('criadoEm', null) == resource.data.get('criadoEm', null)
+                        && request.resource.data.get('clienteUid', null) == resource.data.get('clienteUid', null))
+                    || entregadorAtualizaRota();
       allow delete: if admin();
-    }
-
-    // Contador do número do pedido: só sobe de 1 em 1.
-    match /contadores/{id} {
-      allow get: if cliente();
-      allow create: if cliente() && id == 'pedidos' && request.resource.data.valor == 1;
-      allow update: if cliente() && id == 'pedidos'
-                    && request.resource.data.valor == resource.data.valor + 1;
     }
 
     // ============================================================

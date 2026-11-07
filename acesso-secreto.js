@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — acesso-secreto.js
+// DISTRIBUIDORA DISTRITAL — acesso-secreto.js
 // Gesto discreto: segurar a logo por 5 s abre o login.
 //  - Nenhuma alteração visual, dica ou animação na página.
 //  - Soltou antes / saiu da logo / rolou a página → cancela.

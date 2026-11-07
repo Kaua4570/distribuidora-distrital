@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — produtos-secretos.js
+// DISTRIBUIDORA DISTRITAL — produtos-secretos.js
 // Catálogo reservado: vitrine + carrinho + pedido de entrega. Fluxo:
 //   1. Firebase Auth confirma o login (sem login → volta ao início).
 //   2. Firestore confirma que o UID está em usuarios_autorizados.
@@ -8,16 +8,18 @@
 //   4. Se a sessão cair ou a autorização for revogada, tudo é apagado
 //      da tela imediatamente e o usuário volta ao início.
 // Cadastro e edição: engrenagem ⚙️ (só admin) → painel → "Tela secreta".
-// Pedido: produtos → carrinho → dados → localização/endereço → pagamento → nº do pedido.
+// Pedido: produtos → carrinho → dados → localização/endereço → pagamento → nº do pedido (aleatório, 4 dígitos).
+// Pix: gerado pela função /api/pix-criar (Vercel) e confirmado sozinho pelo Mercado Pago.
 // Entregador e comanda têm telas próprias (entregador.html / admin.html).
 // ============================================================
 import {
   auth, db, doc, onSnapshot, collection, signOut, onAuthStateChanged,
-  runTransaction, query, where, serverTimestamp,
+  setDoc, query, where, serverTimestamp,
   perfilDoUsuario, paginaInicialDo,
   COL_PRODUTOS_SECRETOS, COL_CATEGORIAS_SECRETAS, COL_USUARIOS_AUTORIZADOS,
-  COL_PEDIDOS, COL_CONTADORES
+  COL_PEDIDOS
 } from "./secreto-firebase.js";
+import { API_URL } from "./firebase-config.js";
 
 const SAIDA = "index.html";
 const PAINEL = "admin.html?modo=secreta";
@@ -44,6 +46,8 @@ let cancelarPedidos = null;
 let encerrado = false;
 let iniciado = false;
 let usuarioAtual = null;        // { uid, email }
+const pagosConhecidos = new Set();   // pedidos que já estavam pagos (para avisar só quando MUDAR para pago)
+let primeiraCargaPedidos = true;
 let carrinho = {};              // { produtoId: qtd }
 let meusPedidos = [];
 
@@ -124,6 +128,13 @@ onAuthStateChanged(auth, async (user) => {
     query(collection(db, COL_PEDIDOS), where("clienteUid", "==", user.uid)),
     (snap) => {
       meusPedidos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (!primeiraCargaPedidos){
+        meusPedidos.forEach(p => {
+          if (p.pago === true && !pagosConhecidos.has(p.id)) toast(`Pedido #${p.id}: pagamento confirmado ✓`);
+        });
+      }
+      meusPedidos.forEach(p => { if (p.pago === true) pagosConhecidos.add(p.id); });
+      primeiraCargaPedidos = false;
       renderMeusPedidos();
     },
     (err) => console.error("Meus pedidos:", err.code)
@@ -529,6 +540,7 @@ async function enviarPedido(){
     document.getElementById("co-sucesso").hidden = false;
     document.getElementById("co-sucesso-numero").textContent = `#${numero}`;
     document.getElementById("co-titulo").textContent = "Pedido enviado!";
+    if (pagamento === "Pix" && PIX_AUTOMATICO) abrirPix(numero, dados.total);
     elCoEnd.value = ""; elCoTroco.value = "";
     coLocalizacao = null;
     elCoGps.textContent = "📍 Sincronizar minha localização";
@@ -546,16 +558,25 @@ async function enviarPedido(){
   }
 }
 
-// Número do pedido sequencial (1, 2, 3...) via contador + transação
+// Número do pedido: 4 dígitos ALEATÓRIOS (1000–9999, sem sequência). Se o número já existir, a regra do
+// Firestore nega a gravação (seria uma alteração de pedido alheio) e sorteamos outro.
+function numeroAleatorio(){
+  const v = new Uint32Array(1);
+  crypto.getRandomValues(v);
+  return String(1000 + (v[0] % 9000));
+}
+
 async function criarPedido(dados){
-  const contador = doc(db, COL_CONTADORES, "pedidos");
-  return runTransaction(db, async (tx) => {
-    const snap = await tx.get(contador);
-    const numero = snap.exists() ? (Number(snap.data().valor) || 0) + 1 : 1;
-    tx.set(contador, { valor: numero });
-    tx.set(doc(db, COL_PEDIDOS, String(numero)), { ...dados, criadoEm: serverTimestamp() });
-    return numero;
-  });
+  const TENTATIVAS = 25;
+  for (let i = 1; i <= TENTATIVAS; i++){
+    const numero = numeroAleatorio();
+    try{
+      await setDoc(doc(db, COL_PEDIDOS, numero), { ...dados, criadoEm: serverTimestamp() });
+      return numero;
+    }catch(err){
+      if (!(err && err.code === "permission-denied") || i === TENTATIVAS) throw err;
+    }
+  }
 }
 
 document.getElementById("co-ver-pedidos").addEventListener("click", () => abrirDrawer("drawer-pedidos"));
@@ -574,11 +595,13 @@ const ROTULO_STATUS = {
   "Cancelado": "Cancelado"
 };
 const classeStatus = (s) => ({ "Em Preparo":"preparo", "Saiu para Entrega":"entrega", "Chegando":"chegando", "Finalizado":"finalizado", "Cancelado":"cancelado" }[s] || "pendente");
+// criadoEm ainda é nulo logo após gravar (carimbo do servidor): trata como "agora"
+const tempoDe = (p) => (p.criadoEm && p.criadoEm.toMillis) ? p.criadoEm.toMillis() : Date.now();
 const emAndamento = (p) => p.status !== "Finalizado" && p.status !== "Cancelado";
 
 function renderMeusPedidos(){
   if (encerrado) return;
-  const lista = [...meusPedidos].sort((a, b) => (Number(b.id) || 0) - (Number(a.id) || 0));
+  const lista = [...meusPedidos].sort((a, b) => tempoDe(b) - tempoDe(a));
   const ativos = lista.filter(emAndamento).length;
   elBadgePedidos.hidden = ativos === 0;
   elBadgePedidos.textContent = ativos;
@@ -590,8 +613,10 @@ function renderMeusPedidos(){
   elMeusPedidos.innerHTML = lista.map(p => {
     const data = p.criadoEm?.toDate ? p.criadoEm.toDate().toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" }) : "agora";
     const pgto = p.pagamento === "Pix"
-      ? (p.pago ? "Pix — pago ✓" : "Pix — aguardando confirmação")
+      ? (p.pago ? "Pix — pago ✓" : (PIX_AUTOMATICO ? "Pix — aguardando pagamento" : "Pix — aguardando confirmação"))
       : `Dinheiro${p.troco ? ` (troco para ${p.troco})` : ""}`;
+    const pagarPix = PIX_AUTOMATICO && p.pagamento === "Pix" && !p.pago && emAndamento(p)
+      ? `<button type="button" class="btn btn-gold btn-sm btn-block mp-pix" data-pix="${esc(p.id)}">Pagar com Pix</button>` : "";
     return `
       <div class="mp-card st-${classeStatus(p.status)}">
         <div class="mp-topo">
@@ -601,10 +626,114 @@ function renderMeusPedidos(){
         <div class="mp-linha">${esc(data)} · ${esc(pgto)}</div>
         <div class="mp-itens">${(p.itens || []).map(i => `<div><span>${esc(i.qtd)}x ${esc(i.nome)}</span><span>${real((Number(i.preco) || 0) * (Number(i.qtd) || 0))}</span></div>`).join("")}</div>
         <div class="mp-total"><span>Total</span><span>${real(p.total)}</span></div>
+        ${pagarPix}
       </div>`;
   }).join("");
+  atualizarPixAberto();
 }
 
+elMeusPedidos.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pix]");
+  if (!b) return;
+  const p = meusPedidos.find(x => x.id === b.dataset.pix);
+  if (p) abrirPix(p.id, p.total);
+});
+
 document.getElementById("ps-pedidos").addEventListener("click", () => abrirDrawer("drawer-pedidos"));
+
+// ============================================================
+// PIX AUTOMÁTICO (Mercado Pago)
+// A função da Vercel cria a cobrança com o valor do pedido gravado no Firestore.
+// Quando o cliente paga, o Mercado Pago avisa a função, que marca o pedido como
+// PAGO — e este celular percebe sozinho pela escuta em tempo real dos pedidos.
+// ============================================================
+const PIX_AUTOMATICO = !!API_URL;
+const elPixPedido = document.getElementById("pix-pedido");
+const elPixValor  = document.getElementById("pix-valor");
+const elPixCarregando = document.getElementById("pix-carregando");
+const elPixConteudo = document.getElementById("pix-conteudo");
+const elPixQr = document.getElementById("pix-qr");
+const elPixCodigo = document.getElementById("pix-codigo");
+const elPixStatus = document.getElementById("pix-status");
+const elPixPago = document.getElementById("pix-pago");
+const elPixErro = document.getElementById("pix-erro");
+const elPixTentar = document.getElementById("pix-tentar");
+let pixAbertoId = null;
+
+if (!PIX_AUTOMATICO){
+  document.getElementById("co-nota-pix").textContent = "No Pix, a loja confirma o pagamento no seu pedido.";
+} else {
+  document.getElementById("co-nota-pix").textContent = "O QR Code do Pix aparece logo depois de finalizar, e o pagamento é confirmado automaticamente.";
+}
+
+function mostrarPixPago(){
+  elPixCarregando.hidden = true;
+  elPixConteudo.hidden = true;
+  elPixTentar.hidden = true;
+  elPixErro.textContent = "";
+  elPixPago.hidden = false;
+}
+
+async function abrirPix(id, total){
+  pixAbertoId = String(id);
+  elPixPedido.textContent = `Pedido #${id}`;
+  elPixValor.textContent = real(total);
+  elPixCarregando.hidden = false;
+  elPixConteudo.hidden = true;
+  elPixPago.hidden = true;
+  elPixTentar.hidden = true;
+  elPixErro.textContent = "";
+  abrirDrawer("drawer-pix");
+
+  const ja = meusPedidos.find(p => p.id === pixAbertoId);
+  if (ja && ja.pago === true){ mostrarPixPago(); return; }
+
+  try{
+    const usuario = auth.currentUser;
+    if (!usuario) throw new Error("sem login");
+    const token = await usuario.getIdToken();
+    const resp = await fetch(`${API_URL}/api/pix-criar`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ pedido: pixAbertoId })
+    });
+    const dados = await resp.json().catch(() => ({}));
+    if (pixAbertoId !== String(id)) return;               // fechou/abriu outro enquanto carregava
+    if (!resp.ok || !dados.ok) throw new Error(dados.erro || `http ${resp.status}`);
+    if (dados.pago){ mostrarPixPago(); return; }
+
+    elPixQr.src = `data:image/png;base64,${dados.qrBase64}`;
+    elPixCodigo.value = dados.copiaECola;
+    elPixCarregando.hidden = true;
+    elPixConteudo.hidden = false;
+    elPixStatus.textContent = "Aguardando o pagamento…";
+  }catch(err){
+    console.error("Pix:", err);
+    elPixCarregando.hidden = true;
+    elPixErro.textContent = "Não foi possível gerar o Pix agora. Seu pedido está salvo — tente de novo ou fale com a loja.";
+    elPixTentar.hidden = false;
+    elPixTentar.onclick = () => abrirPix(id, total);
+  }
+}
+
+// chamado a cada atualização dos pedidos: se o Pix aberto foi pago, mostra a confirmação
+function atualizarPixAberto(){
+  if (!pixAbertoId) return;
+  const p = meusPedidos.find(x => x.id === pixAbertoId);
+  if (p && p.pago === true && elPixPago.hidden) mostrarPixPago();
+}
+
+document.getElementById("pix-copiar").addEventListener("click", async () => {
+  const codigo = elPixCodigo.value;
+  try{
+    await navigator.clipboard.writeText(codigo);
+  }catch(_){
+    elPixCodigo.select();
+    try{ document.execCommand("copy"); }catch(__){}
+  }
+  toast("Código Pix copiado!");
+});
+document.querySelectorAll("#drawer-pix [data-fechar-drawer], #overlay").forEach(el =>
+  el.addEventListener("click", () => { pixAbertoId = null; }));
 
 atualizarCarrinho();

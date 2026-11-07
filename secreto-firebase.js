@@ -1,5 +1,5 @@
 // ============================================================
-// DISTRIBUIDORA CAMPOS — secreto-firebase.js
+// DISTRIBUIDORA DISTRITAL — secreto-firebase.js
 // Camada de autenticação da área secreta (Firebase Authentication).
 // Reaproveita o app Firebase já criado em firebase-config.js.
 // Só é carregado sob demanda (login ou área secreta) — a página
@@ -12,7 +12,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   doc, getDoc, onSnapshot, collection, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
-  runTransaction, query, where
+  query, where
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // Sessão vive só na aba: fechar a aba/navegador encerra o acesso.
@@ -21,12 +21,11 @@ export const auth = initializeAuth(app, { persistence: browserSessionPersistence
 
 export const COL_PRODUTOS_SECRETOS = "produtos_secretos";
 export const COL_CATEGORIAS_SECRETAS = "categorias_secretas";
-export const COL_CONTADORES = "contadores";
 export const COL_USUARIOS_AUTORIZADOS = "usuarios_autorizados";
 
 export {
   db, doc, getDoc, onSnapshot, collection, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
-  runTransaction, query, where, COL_PEDIDOS,
+  query, where, COL_PEDIDOS,
   signInWithEmailAndPassword, signOut, onAuthStateChanged
 };
 
