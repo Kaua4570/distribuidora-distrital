@@ -197,13 +197,13 @@ e só marca como pago se estiver *aprovado*, for Pix, com o número do pedido e 
 3. **Vercel → seu projeto → Settings → Environment Variables** e crie:
    - `FIREBASE_SERVICE_ACCOUNT` = o conteúdo do arquivo `.json`
    - `MP_ACCESS_TOKEN` = Access Token da sua aplicação no Mercado Pago (`TEST-...` para testar, o de **produção** para valer)
-   - `ALLOWED_ORIGINS` = `https://kaua4570.github.io,https://distribuidora-campos.vercel.app` (os endereços de onde o site abre, separados por vírgula, sem barra no final)
+   - `ALLOWED_ORIGINS` = `https://kaua4570.github.io,https://SEU-PROJETO.vercel.app` (os endereços de onde o site abre, separados por vírgula, sem barra no final)
    - `MP_SELLER_EMAIL` (opcional) = e-mail da conta do Mercado Pago
    Depois **Deployments → ⋯ → Redeploy**.
-4. Em `firebase-config.js`, confira `API_URL` (endereço do seu projeto na Vercel, ex.: `https://distribuidora-campos.vercel.app`).
+4. Em `firebase-config.js`, confira `API_URL` (endereço do seu projeto na Vercel, ex.: `https://SEU-PROJETO.vercel.app`).
    Com `API_URL = ""` o Pix automático fica desligado e a loja confirma o Pix manualmente.
 5. *(Reforço, opcional)* Mercado Pago → Suas integrações → sua aplicação → **Webhooks** → URL
-   `https://distribuidora-campos.vercel.app/api/mp-webhook`, evento **Pagamentos**. A função já informa essa URL em cada Pix.
+   `https://SEU-PROJETO.vercel.app/api/mp-webhook`, evento **Pagamentos**. A função já informa essa URL em cada Pix.
 6. Teste com um pedido de valor baixo: pague o QR e veja "Pagamento confirmado ✓".
 
 **Se der "Não foi possível gerar o Pix":** Vercel → seu projeto → **Logs** mostra o motivo (variável faltando, token do

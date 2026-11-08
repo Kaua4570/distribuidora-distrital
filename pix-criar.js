@@ -74,8 +74,30 @@ module.exports = async function handler(req, res){
       return res.status(400).json({ ok: false, erro: "encerrado" });
     }
     if (pedido.pago === true) return res.status(200).json({ ok: true, pago: true });
-    const total = Number(pedido.total);
+
+    // 2b) o VALOR é recalculado aqui com os preços reais de produtos_secretos
+    //     (o total gravado pelo navegador não é confiável)
+    const itensPedido = Array.isArray(pedido.itens) ? pedido.itens : [];
+    if (!itensPedido.length || itensPedido.length > 100) return res.status(400).json({ ok: false, erro: "valor" });
+    let centavos = 0;
+    const itensReais = [];
+    for (const it of itensPedido){
+      const qtd = Number(it && it.qtd);
+      if (!Number.isInteger(qtd) || qtd < 1 || qtd > 999) return res.status(400).json({ ok: false, erro: "valor" });
+      const prod = await db.collection("produtos_secretos").doc(String((it && it.produtoId) || "_")).get();
+      if (!prod.exists) return res.status(400).json({ ok: false, erro: "produto" });
+      const preco = Number(prod.data().preco);
+      if (!(preco >= 0)) return res.status(400).json({ ok: false, erro: "produto" });
+      centavos += Math.round(preco * 100) * qtd;
+      itensReais.push({ ...it, preco });
+    }
+    const total = centavos / 100;
     if (!(total > 0)) return res.status(400).json({ ok: false, erro: "valor" });
+    if (Math.abs(total - Number(pedido.total)) > 0.001){
+      // corrige o pedido para o valor real antes de cobrar
+      await ref.update({ itens: itensReais, total, pix: null });
+      pedido.total = total; pedido.pix = null;
+    }
 
     // 3) já existe um Pix ainda válido? devolve o mesmo (não cria cobrança duplicada)
     const pix = pedido.pix;

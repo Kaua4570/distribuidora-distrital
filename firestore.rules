@@ -64,7 +64,8 @@ service cloud.firestore {
         && d.get('troco', '') is string && d.get('troco', '').size() <= 30
         && d.pago == false
         && d.status == 'Pendente'
-        && d.total is number && d.total >= 0
+        && d.total is number && d.total > 0
+        && d.keys().hasOnly(['clienteUid','cliente','telefone','tipoEntrega','endereco','localizacao','pagamento','troco','pago','itens','total','status','criadoEm'])
         && d.itens is list && d.itens.size() > 0 && d.itens.size() <= 100
         && (d.get('localizacao', null) == null
             || (d.localizacao.lat is number && d.localizacao.lng is number))

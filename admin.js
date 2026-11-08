@@ -120,7 +120,9 @@ function perfilDoPainel(d){
   return null;
 }
 
+let perfilAtual = "";
 function entrarNoPainel(perfil){
+  perfilAtual = perfil;
   painelAberto = true;
   telaLogin.style.display = "none";
   appAdmin.style.display = "block";
@@ -741,6 +743,7 @@ function renderPedidos(){
         <button type="button" class="btn btn-sm ${pago ? "btn-ghost" : "btn-gold"} comanda-pago" data-pago-id="${esc(p.id)}" data-pago="${pago ? "1" : "0"}">
           ${pago ? "Pago ✓ (desfazer)" : "Marcar como pago"}
         </button>
+        ${perfilAtual === "admin" ? `<button type="button" class="btn btn-sm btn-outline comanda-apagar" data-apagar-id="${esc(p.id)}" style="margin-top:8px;color:#F08272;border-color:#F08272">🗑 Apagar pedido</button>` : ""}
       </div>`;
   }).join("");
 
@@ -751,6 +754,19 @@ function renderPedidos(){
       } catch(err){
         console.error(err);
         mostrarToast("Erro ao atualizar status do pedido.", true);
+      }
+    });
+  });
+  grid.querySelectorAll("[data-apagar-id]").forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.apagarId;
+      if (!confirm(`Apagar o pedido #${id} para sempre? Isso não pode ser desfeito.`)) return;
+      try{
+        await deleteDoc(doc(db, COL_PEDIDOS, id));
+        mostrarToast(`Pedido #${id} apagado.`);
+      } catch(err){
+        console.error(err);
+        mostrarToast("Erro ao apagar o pedido.", true);
       }
     });
   });
