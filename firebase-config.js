@@ -33,4 +33,4 @@ export const DOC_CONFIG_LOJA = "config/loja";
 // Endereço das funções da Vercel (Pix do Mercado Pago): pasta /api deste projeto.
 // Troque se o seu endereço da Vercel for outro. Deixe "" para desligar o Pix automático
 // (aí a loja confirma o pagamento manualmente no painel).
-export const API_URL = "https://distribuidora-campos.vercel.app";
+export const API_URL = "https://distribuidora-distrital.vercel.app";
